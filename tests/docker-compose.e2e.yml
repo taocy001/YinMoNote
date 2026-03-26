@@ -1,0 +1,56 @@
+version: '3.8'
+
+# E2E test stack:
+#   app   – yinmonote:e2e          application under test (built by run-e2e.sh)
+#   e2e   – yinmonote-playwright:latest  Playwright runner (built by run-e2e.sh)
+# Both images are removed by run-e2e.sh's cleanup trap after every run.
+
+services:
+  # ── Application under test ────────────────────────────────────────────────
+  app:
+    image: yinmonote:e2e
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+      args:
+        # Use 1 000 iterations instead of 100 000 so PBKDF2 completes in
+        # milliseconds on Alpine Chromium, preventing spec 07 beforeAll timeouts.
+        - VITE_PBKDF2_ITERATIONS=1000
+    environment:
+      - TZ=Asia/Shanghai
+      # SYNC_COMMIT=1: commit every note save immediately (no 30-second batch delay)
+      # so that E2E history tests can read git entries right after manualSave().
+      - SYNC_COMMIT=1
+      - DATA_DIR=/data/notes
+      - CONFIG_FILE=/data/config.json
+      # TLS_SELF=1: serve HTTPS with a self-signed CA so Chrome (v130+) does not
+      # auto-upgrade http:// to https://, which causes ERR_SSL_PROTOCOL_ERROR.
+      - TLS_SELF=1
+    volumes:
+      # Fresh ephemeral data directory for each test run (destroyed on `down -v`)
+      - e2e-app-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost:8080/api/config > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24        # wait up to 2 min for first startup
+      start_period: 15s
+
+  # ── Playwright test runner ────────────────────────────────────────────────
+  e2e:
+    image: yinmonote-playwright:latest
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.playwright
+    environment:
+      - APP_URL=https://app:8080
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      # Expose the HTML report and failure screenshots to the host
+      - ./e2e/playwright-report:/tests/playwright-report
+      - ./e2e/test-results:/tests/test-results
+
+volumes:
+  e2e-app-data:

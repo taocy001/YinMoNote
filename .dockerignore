@@ -1,0 +1,17 @@
+# Build outputs
+dist/
+backend/dist/*
+!backend/dist/.gitkeep
+
+# Test artifacts
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+
+# Frontend dependencies (rebuilt inside Docker)
+frontend/node_modules/
+
+# macOS
+.DS_Store
+
+# Git history
+.git/

@@ -1,0 +1,27 @@
+services:
+  yinmonote:
+    image: yinmonote
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: yinmonote
+    ports:
+      # HOST_BIND controls network exposure:
+      #   127.0.0.1: (default) — localhost only, safe for personal use
+      #   0.0.0.0:             — all interfaces, for LAN / public access
+      - "${HOST_BIND:-127.0.0.1:}${HOST_PORT:-8080}:8080"
+    volumes:
+      # Host ~/.yinmonote (or $YINMONOTE_DIR) is mounted at /data inside the
+      # container. DATA_DIR and CONFIG_FILE env vars below point the app there,
+      # so the container-internal user home (/home/yinmonote) is irrelevant to
+      # the data layout and users never need to reference it.
+      - ${YINMONOTE_DIR:-~/.yinmonote}:/data
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - DATA_DIR=/data/notes
+      - CONFIG_FILE=/data/config.json
+      # ── CORS ─────────────────────────────────────────────────────────
+      # Only needed when frontend and backend run on different origins
+      # (e.g. Vite dev server). Not needed for production (same port 8080).
+      #- ALLOWED_ORIGIN=http://localhost:5173

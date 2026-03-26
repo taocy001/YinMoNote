@@ -1,0 +1,32 @@
+[Unit]
+Description=YinMoNote Secure Note Library
+After=network.target
+
+[Service]
+Type=simple
+User=yinmonote
+Group=yinmonote
+
+# Binary and data locations — adjust to match your deployment
+ExecStart=/opt/yinmonote/yinmonote
+Environment=DATA_DIR=/var/lib/yinmonote
+Environment=PORT=:8080
+
+# HTTP Basic Auth:
+#   Internet-facing deployment : required — anyone can reach the server without it
+#   LAN deployment             : strongly recommended
+#   Localhost-only             : optional
+#Environment=AUTH_USER=admin
+#Environment=AUTH_PASS=your-strong-password
+
+Restart=on-failure
+RestartSec=5s
+
+# Basic systemd hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/yinmonote
+
+[Install]
+WantedBy=multi-user.target

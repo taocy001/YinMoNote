@@ -1,0 +1,7 @@
+# Lightweight patch image for the E2E test runner.
+# Used by run-e2e.sh when running a specific spec to avoid a full rebuild:
+# starts FROM the existing local image and overwrites only the test files.
+# No Docker Hub access needed — the base is always locally available.
+FROM yinmonote-playwright:latest
+COPY tests/e2e/specs/ /tests/specs/
+COPY tests/e2e/helpers/ /tests/helpers/
