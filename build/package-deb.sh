@@ -79,9 +79,9 @@ case "$1" in
         useradd --system --shell /bin/false --no-create-home yinmonote 2>/dev/null || true
 
         # Initialise data directory (no-op if already exists)
-        mkdir -p /var/lib/yinmonote
-        chown yinmonote:yinmonote /var/lib/yinmonote
-        chmod 700 /var/lib/yinmonote
+        mkdir -p /var/lib/yinmonote/notes
+        chown -R yinmonote:yinmonote /var/lib/yinmonote
+        chmod 700 /var/lib/yinmonote /var/lib/yinmonote/notes
 
         systemctl daemon-reload
         systemctl enable yinmonote
