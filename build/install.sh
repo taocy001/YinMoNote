@@ -5,7 +5,7 @@
 # port, then configures and starts the background service.
 #
 # macOS : sets up a LaunchAgent (~/.yinmonote/ default, auto-start at login)
-# Linux : installs a systemd user service
+# Linux : installs a systemd system service under /etc/systemd/system/ (requires sudo)
 
 set -e
 
@@ -16,10 +16,29 @@ if [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
+# On Linux the installer writes to /etc/systemd/system/ and /usr/local/bin/ —
+# verify sudo access up front so we fail fast and cache the credential before
+# the interactive prompts begin (avoids a password interruption mid-flow).
+if [ "$(uname -s)" != "Darwin" ]; then
+    if ! sudo -v 2>/dev/null; then
+        echo "Error: sudo access is required to install a system service."
+        exit 1
+    fi
+    # Keep the sudo credential alive in the background for long installs
+    ( while true; do sudo -v; sleep 50; done ) &
+    _SUDO_KEEPALIVE_PID=$!
+    trap 'kill "$_SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
+fi
+
 BIN_DIR="/usr/local/bin"
-YINMONOTE_DIR="$HOME/.yinmonote"   # config.json is always here
-DEFAULT_NOTES="$HOME/.yinmonote/notes"
 DEFAULT_PORT=":8080"
+if [ "$(uname -s)" = "Darwin" ]; then
+    YINMONOTE_DIR="$HOME/.yinmonote"
+    DEFAULT_NOTES="$HOME/.yinmonote/notes"
+else
+    YINMONOTE_DIR="/var/lib/yinmonote"
+    DEFAULT_NOTES="/var/lib/yinmonote/notes"
+fi
 
 # ── Detect existing installation and read config as defaults ──────────────────
 IS_UPGRADE=false
@@ -50,18 +69,24 @@ if [ "$(uname -s)" = "Darwin" ]; then
         fi
     fi
 else
-    SERVICE="$HOME/.config/systemd/user/yinmonote.service"
-    if [ -f "$SERVICE" ]; then
+    # Check system-level service first; fall back to old user-level location for migration
+    _SYS_SERVICE="/etc/systemd/system/yinmonote.service"
+    _USER_SERVICE="$HOME/.config/systemd/user/yinmonote.service"
+    _SVC_FILE=""
+    [ -f "$_SYS_SERVICE"  ] && _SVC_FILE="$_SYS_SERVICE"
+    [ -z "$_SVC_FILE" ] && [ -f "$_USER_SERVICE" ] && _SVC_FILE="$_USER_SERVICE"
+    if [ -n "$_SVC_FILE" ]; then
         IS_UPGRADE=true
-        EXISTING_DATA=$(grep '^Environment=DATA_DIR=' "$SERVICE" 2>/dev/null | cut -d= -f3 || true)
-        EXISTING_PORT=$(grep '^Environment=PORT=' "$SERVICE" 2>/dev/null | cut -d= -f3 || true)
-        _TLS_SELF=$(grep '^Environment=TLS_SELF=' "$SERVICE" 2>/dev/null | cut -d= -f3 || true)
-        EXISTING_ACME_DOMAIN=$(grep '^Environment=ACME_DOMAIN=' "$SERVICE" 2>/dev/null | cut -d= -f3 || true)
-        EXISTING_EXTRA_IPS=$(grep '^Environment=TLS_EXTRA_IPS=' "$SERVICE" 2>/dev/null | cut -d= -f3- || true)
-        EXISTING_WEBDAV_DISABLED=$(grep '^Environment=WEBDAV_DISABLED=' "$SERVICE" 2>/dev/null | cut -d= -f3 || true)
+        EXISTING_DATA=$(grep '^Environment=DATA_DIR=' "$_SVC_FILE" 2>/dev/null | cut -d= -f3 || true)
+        EXISTING_PORT=$(grep '^Environment=PORT=' "$_SVC_FILE" 2>/dev/null | cut -d= -f3 || true)
+        _TLS_SELF=$(grep '^Environment=TLS_SELF=' "$_SVC_FILE" 2>/dev/null | cut -d= -f3 || true)
+        EXISTING_ACME_DOMAIN=$(grep '^Environment=ACME_DOMAIN=' "$_SVC_FILE" 2>/dev/null | cut -d= -f3 || true)
+        EXISTING_EXTRA_IPS=$(grep '^Environment=TLS_EXTRA_IPS=' "$_SVC_FILE" 2>/dev/null | cut -d= -f3- || true)
+        EXISTING_WEBDAV_DISABLED=$(grep '^Environment=WEBDAV_DISABLED=' "$_SVC_FILE" 2>/dev/null | cut -d= -f3 || true)
         [ "$_TLS_SELF" = "1" ] && EXISTING_TLS_MODE="self"
         [ -n "$EXISTING_ACME_DOMAIN" ] && EXISTING_TLS_MODE="acme"
-        if systemctl --user is-active yinmonote >/dev/null 2>&1; then
+        if systemctl is-active yinmonote >/dev/null 2>&1 || \
+           systemctl --user is-active yinmonote >/dev/null 2>&1; then
             EXISTING_STATUS="running"
         else
             EXISTING_STATUS="stopped"
@@ -245,7 +270,13 @@ echo "==> Installing binary..."
 sudo install -m 755 "$BINARY" "$BIN_DIR/yinmonote"
 
 # ── Create directories ────────────────────────────────────────────────────────
-mkdir -p "$DATA_DIR" "$YINMONOTE_DIR" "$LOG_DIR"
+if [ "$(uname -s)" = "Darwin" ]; then
+    mkdir -p "$DATA_DIR" "$YINMONOTE_DIR" "$LOG_DIR"
+else
+    sudo mkdir -p "$DATA_DIR" "$YINMONOTE_DIR"
+    sudo chown yinmonote:yinmonote "$DATA_DIR" "$YINMONOTE_DIR"
+    sudo chmod 700 "$DATA_DIR" "$YINMONOTE_DIR"
+fi
 
 # ── macOS: LaunchAgent ────────────────────────────────────────────────────────
 if [ "$(uname -s)" = "Darwin" ]; then
@@ -302,11 +333,13 @@ if [ "$(uname -s)" = "Darwin" ]; then
     echo "==> Starting service..."
     launchctl load -w "$PLIST"
 
-# ── Linux: systemd user service ───────────────────────────────────────────────
+# ── Linux: systemd system service ────────────────────────────────────────────
 else
-    SYSTEMD_DIR="$HOME/.config/systemd/user"
-    SERVICE="$SYSTEMD_DIR/yinmonote.service"
-    mkdir -p "$SYSTEMD_DIR"
+    SERVICE="/etc/systemd/system/yinmonote.service"
+    _USER_SERVICE="$HOME/.config/systemd/user/yinmonote.service"
+
+    # Create dedicated system user (no-op if already exists)
+    sudo useradd --system --shell /bin/false --no-create-home yinmonote 2>/dev/null || true
 
     {
         echo "[Unit]"
@@ -314,6 +347,9 @@ else
         echo "After=network.target"
         echo ""
         echo "[Service]"
+        echo "Type=simple"
+        echo "User=yinmonote"
+        echo "Group=yinmonote"
         echo "ExecStart=$BIN_DIR/yinmonote"
         echo "Environment=DATA_DIR=$DATA_DIR"
         echo "Environment=CONFIG_FILE=$CONFIG_FILE"
@@ -322,20 +358,34 @@ else
         [ -n "$ACME_DOMAIN"        ] && echo "Environment=ACME_DOMAIN=$ACME_DOMAIN"
         [ -n "$TLS_EXTRA_IPS"      ] && echo "Environment=TLS_EXTRA_IPS=$TLS_EXTRA_IPS"
         [ "$WEBDAV_DISABLED" = "1" ] && echo "Environment=WEBDAV_DISABLED=1"
-        echo "Restart=always"
+        echo "Restart=on-failure"
+        echo "RestartSec=5s"
+        echo "NoNewPrivileges=yes"
+        echo "PrivateTmp=yes"
+        echo "ProtectSystem=strict"
+        echo "ReadWritePaths=$DATA_DIR $YINMONOTE_DIR"
         echo ""
         echo "[Install]"
-        echo "WantedBy=default.target"
-    } > "$SERVICE"
+        echo "WantedBy=multi-user.target"
+    } | sudo tee "$SERVICE" > /dev/null
 
+    # Stop and remove old user-level service if present
     if systemctl --user is-active yinmonote >/dev/null 2>&1; then
-        echo "==> Stopping existing service..."
+        echo "==> Stopping old user-level service..."
         systemctl --user stop yinmonote
+        systemctl --user disable yinmonote 2>/dev/null || true
+    fi
+    [ -f "$_USER_SERVICE" ] && rm -f "$_USER_SERVICE"
+
+    # Stop existing system service if running
+    if systemctl is-active yinmonote >/dev/null 2>&1; then
+        echo "==> Stopping existing service..."
+        sudo systemctl stop yinmonote
     fi
 
     echo "==> Enabling and starting service..."
-    systemctl --user daemon-reload
-    systemctl --user enable --now yinmonote
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now yinmonote
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -385,5 +435,9 @@ fi
 echo ""
 echo "  Notes:  $DATA_DIR"
 echo "  Config: $CONFIG_FILE"
-echo "  Logs:   $LOG_DIR/yinmonote.log"
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "  Logs:   $LOG_DIR/yinmonote.log"
+else
+    echo "  Logs:   journalctl -u yinmonote"
+fi
 echo "════════════════════════════════════════"

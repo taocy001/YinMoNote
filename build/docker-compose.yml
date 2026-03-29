@@ -21,6 +21,10 @@ services:
       - TZ=Asia/Shanghai
       - DATA_DIR=/data/notes
       - CONFIG_FILE=/data/config.json
+      - TLS_SELF=${TLS_SELF:-}
+      - ACME_DOMAIN=${ACME_DOMAIN:-}
+      - TLS_EXTRA_IPS=${TLS_EXTRA_IPS:-}
+      - WEBDAV_DISABLED=${WEBDAV_DISABLED:-}
       # ── CORS ─────────────────────────────────────────────────────────
       # Only needed when frontend and backend run on different origins
       # (e.g. Vite dev server). Not needed for production (same port 8080).

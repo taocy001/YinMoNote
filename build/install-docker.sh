@@ -40,12 +40,20 @@ fi
 EXISTING_NOTES=""
 EXISTING_PORT=""
 EXISTING_MODE=""
+EXISTING_TLS_MODE=""
+EXISTING_ACME_DOMAIN=""
+EXISTING_EXTRA_IPS=""
+EXISTING_WEBDAV_DISABLED=""
 
 if [ -f "$ENV_FILE" ]; then
-    EXISTING_NOTES=$(grep '^NOTES_DIR='   "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
-    EXISTING_PORT=$(grep  '^HOST_PORT='   "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
-    EXISTING_MODE=$(grep  '^ACCESS_MODE=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
-    EXISTING_BIND=$(grep  '^HOST_BIND='   "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
+    EXISTING_NOTES=$(grep           '^NOTES_DIR='        "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
+    EXISTING_PORT=$(grep            '^HOST_PORT='        "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
+    EXISTING_MODE=$(grep            '^ACCESS_MODE='      "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
+    EXISTING_BIND=$(grep            '^HOST_BIND='        "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
+    EXISTING_TLS_MODE=$(grep        '^TLS_MODE='         "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
+    EXISTING_ACME_DOMAIN=$(grep     '^ACME_DOMAIN='      "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
+    EXISTING_EXTRA_IPS=$(grep       '^TLS_EXTRA_IPS='    "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+    EXISTING_WEBDAV_DISABLED=$(grep '^WEBDAV_DISABLED='  "$ENV_FILE" 2>/dev/null | cut -d= -f2  || true)
 fi
 
 # ── Detect existing container ─────────────────────────────────────────────────
@@ -126,6 +134,78 @@ case "${INPUT_MODE:-${EXISTING_MODE:-1}}" in
     *)         ACCESS_MODE="local";   HOST_BIND="127.0.0.1:" ;;
 esac
 
+# ── HTTPS ─────────────────────────────────────────────────────────────────────
+echo ""
+echo "── HTTPS ────────────────────────────────────────────"
+echo "  1) No HTTPS — HTTP only (suitable for local/trusted network)"
+echo "  2) Self-signed certificate — HTTPS without a domain name"
+echo "     (download CA cert once per device from /ca.crt)"
+echo "  3) Let's Encrypt — automatic HTTPS with a domain name"
+echo "     (requires a valid domain pointing to this server)"
+
+case "$EXISTING_TLS_MODE" in
+    self) _TLS_DEFAULT=2 ;;
+    acme) _TLS_DEFAULT=3 ;;
+    *)    _TLS_DEFAULT=1 ;;
+esac
+printf "  Choice [%s]: " "$_TLS_DEFAULT"
+read -r _TLS_CHOICE
+_TLS_CHOICE="${_TLS_CHOICE:-$_TLS_DEFAULT}"
+
+TLS_SELF=""
+ACME_DOMAIN=""
+TLS_EXTRA_IPS=""
+case "$_TLS_CHOICE" in
+    2)
+        TLS_SELF="1"
+        echo ""
+        echo "  The certificate will include all IP addresses currently assigned to"
+        echo "  this machine. If your public IP is on an upstream NAT gateway (common"
+        echo "  on cloud VPS), it won't be detected automatically — enter it here."
+        _EXTRA_PROMPT="${EXISTING_EXTRA_IPS:-}"
+        if [ -n "$_EXTRA_PROMPT" ]; then
+            printf "  Public/extra IPs, comma-separated [%s]: " "$_EXTRA_PROMPT"
+        else
+            printf "  Public/extra IPs (leave blank if not needed): "
+        fi
+        read -r _EXTRA_INPUT
+        TLS_EXTRA_IPS="${_EXTRA_INPUT:-$_EXTRA_PROMPT}"
+        TLS_MODE="self"
+        ;;
+    3)
+        _ACME_PROMPT="${EXISTING_ACME_DOMAIN:-}"
+        if [ -n "$_ACME_PROMPT" ]; then
+            printf "  Domain name [%s]: " "$_ACME_PROMPT"
+        else
+            printf "  Domain name: "
+        fi
+        read -r _ACME_INPUT
+        ACME_DOMAIN="${_ACME_INPUT:-$_ACME_PROMPT}"
+        if [ -z "$ACME_DOMAIN" ]; then
+            echo "  Error: domain name is required for Let's Encrypt. Falling back to HTTP."
+        fi
+        TLS_MODE="acme"
+        ;;
+    *) TLS_MODE="" ;;
+esac
+
+# ── WebDAV ────────────────────────────────────────────────────────────────────
+echo ""
+echo "── WebDAV ───────────────────────────────────────────"
+echo "  Allows mobile apps (Obsidian, iA Writer, etc.) to access notes"
+echo "  at /dav/ using the same password as the web app."
+
+_DAV_DEFAULT="Y"
+[ "$EXISTING_WEBDAV_DISABLED" = "1" ] && _DAV_DEFAULT="N"
+printf "  Enable WebDAV? [%s]: " "$_DAV_DEFAULT"
+read -r _DAV_INPUT
+_DAV_INPUT="${_DAV_INPUT:-$_DAV_DEFAULT}"
+
+WEBDAV_DISABLED=""
+case "$_DAV_INPUT" in
+    [nN]*) WEBDAV_DISABLED="1" ;;
+esac
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "  ── Configuration summary ─────────────────────────"
@@ -138,15 +218,33 @@ if [ "$ACCESS_MODE" = "network" ]; then
 else
     echo "  Access:  Localhost only"
 fi
+if   [ -n "$ACME_DOMAIN" ]; then
+    echo "  HTTPS:   Let's Encrypt ($ACME_DOMAIN)"
+elif [ "$TLS_SELF" = "1" ]; then
+    [ -n "$TLS_EXTRA_IPS" ] \
+        && echo "  HTTPS:   Self-signed certificate (extra IPs: $TLS_EXTRA_IPS)" \
+        || echo "  HTTPS:   Self-signed certificate"
+else
+    echo "  HTTPS:   Disabled (HTTP only)"
+fi
+if [ "$WEBDAV_DISABLED" = "1" ]; then
+    echo "  WebDAV:  Disabled"
+else
+    echo "  WebDAV:  Enabled (/dav/)"
+fi
 echo ""
 
-# ── Persist non-sensitive config for future upgrades ─────────────────────────
+# ── Persist config for future upgrades ───────────────────────────────────────
 mkdir -p "$YINMONOTE_DIR"
 cat > "$ENV_FILE" << EOF
 NOTES_DIR=$NOTES_DIR
 HOST_PORT=$HOST_PORT
 HOST_BIND=$HOST_BIND
 ACCESS_MODE=$ACCESS_MODE
+TLS_MODE=$TLS_MODE
+ACME_DOMAIN=$ACME_DOMAIN
+TLS_EXTRA_IPS=$TLS_EXTRA_IPS
+WEBDAV_DISABLED=$WEBDAV_DISABLED
 EOF
 
 # ── Create notes directory ────────────────────────────────────────────────────
@@ -166,7 +264,10 @@ docker image prune -f >/dev/null 2>&1 || true
 
 # ── Start service ─────────────────────────────────────────────────────────────
 echo "==> Starting service..."
-YINMONOTE_DIR="$YINMONOTE_DIR" NOTES_DIR="$NOTES_DIR" HOST_PORT="$HOST_PORT" HOST_BIND="$HOST_BIND" \
+YINMONOTE_DIR="$YINMONOTE_DIR" NOTES_DIR="$NOTES_DIR" \
+    HOST_PORT="$HOST_PORT" HOST_BIND="$HOST_BIND" \
+    TLS_SELF="$TLS_SELF" ACME_DOMAIN="$ACME_DOMAIN" \
+    TLS_EXTRA_IPS="$TLS_EXTRA_IPS" WEBDAV_DISABLED="$WEBDAV_DISABLED" \
     docker compose -f "$PROJECT_ROOT/build/docker-compose.yml" \
     --project-directory "$PROJECT_ROOT" up -d --no-build
 
@@ -182,27 +283,34 @@ echo "  Notes:   $NOTES_DIR"
 echo "  Config:  $YINMONOTE_DIR/config.json"
 echo ""
 
-if [ "$ACCESS_MODE" = "network" ]; then
-    echo "  Open:    http://<server-ip>:$HOST_PORT"
-    echo ""
-    echo "  ── Security checklist for network access ──────"
-    echo "  1. Set an access password: Settings → Security"
-    echo "     (PBKDF2-derived; only a hash is stored on disk)"
-    echo ""
-    echo "  2. Enable TLS (required for public internet):"
-    echo "       Auto certificate (needs a domain):"
-    echo "         ACME_DOMAIN=your.domain.com"
-    echo "       Self-signed certificate (LAN / intranet):"
-    echo "         TLS_SELF=1"
-    echo "     Add the variable to build/docker-compose.yml,"
-    echo "     then run: make install-docker"
-    echo ""
-    echo "  3. Restrict firewall to trusted sources on port $HOST_PORT"
+# Determine base URL
+_PORT_NUM="$HOST_PORT"
+if   [ -n "$ACME_DOMAIN" ]; then
+    _BASE_URL="https://$ACME_DOMAIN"
+elif [ "$TLS_SELF" = "1" ]; then
+    [ "$ACCESS_MODE" = "network" ] \
+        && _BASE_URL="https://<server-ip>:${_PORT_NUM}" \
+        || _BASE_URL="https://localhost:${_PORT_NUM}"
 else
-    echo "  Open:    http://localhost:$HOST_PORT"
+    [ "$ACCESS_MODE" = "network" ] \
+        && _BASE_URL="http://<server-ip>:${_PORT_NUM}" \
+        || _BASE_URL="http://localhost:${_PORT_NUM}"
+fi
+
+echo "  Open:    $_BASE_URL"
+if [ "$TLS_SELF" = "1" ]; then
     echo ""
-    echo "  Tip: to share access over the network, re-run the"
-    echo "       installer and choose option 2."
+    echo "  HTTPS (self-signed TLS) — install the CA cert once per device:"
+    echo "    $YINMONOTE_DIR/selfca/ca.crt"
+    echo "  Remote devices:  $_BASE_URL/ca.crt"
+fi
+if [ "$WEBDAV_DISABLED" != "1" ]; then
+    echo "  WebDAV:  ${_BASE_URL}/dav/"
+fi
+if [ "$ACCESS_MODE" = "network" ] && [ -z "$TLS_SELF" ] && [ -z "$ACME_DOMAIN" ]; then
+    echo ""
+    echo "  Note: running HTTP on a public server — consider enabling TLS."
+    echo "        Re-run make install-docker to configure."
 fi
 
 echo "════════════════════════════════════════"

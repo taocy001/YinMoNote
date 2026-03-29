@@ -10,6 +10,7 @@ Group=yinmonote
 # Binary and data locations — adjust to match your deployment
 ExecStart=/opt/yinmonote/yinmonote
 Environment=DATA_DIR=/var/lib/yinmonote
+Environment=CONFIG_FILE=/var/lib/yinmonote/config.json
 Environment=PORT=:8080
 
 # HTTP Basic Auth:
