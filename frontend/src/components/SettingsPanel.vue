@@ -94,6 +94,32 @@
                   <option :value="30">30 Min</option>
                 </select>
               </div>
+              <!-- WebDAV access -->
+              <div class="px-4 py-3 rounded-xl space-y-2" style="background: var(--bg-app); border: 1px solid var(--border);">
+                <div>
+                  <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.webdavTitle }}</span>
+                  <p class="ts-xs mt-0.5" style="color: var(--text-muted);">{{ t.webdavDesc }}</p>
+                </div>
+                <div v-if="draftSettings.serverEncrypt" class="px-3 py-2 rounded-lg ts-xs leading-snug" style="background: rgba(255,170,0,0.08); border: 1px solid rgba(255,170,0,0.3); color: var(--text-muted);">{{ t.serverEncryptWebDavWarn }}</div>
+                <div class="space-y-1.5">
+                  <div class="flex items-center gap-2">
+                    <span class="ts-xs shrink-0" style="color: var(--text-muted); width: 4.5rem;">Server URL</span>
+                    <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg truncate" style="background: var(--bg-hover); color: var(--text-primary);">{{ mcpBaseUrl }}/dav/</code>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="ts-xs shrink-0" style="color: var(--text-muted); width: 4.5rem;">Username</span>
+                    <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg" style="background: var(--bg-hover); color: var(--text-primary);">yinmonote</code>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="ts-xs shrink-0" style="color: var(--text-muted); width: 4.5rem;">Password</span>
+                    <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg" style="background: var(--bg-hover); color: var(--text-muted);">••••••••••••••••</code>
+                    <button @click="copyDavPassword" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);">
+                      {{ davPasswordCopied ? t.webdavCopied : t.webdavCopyPassword }}
+                    </button>
+                  </div>
+                  <p v-if="davCopyError" class="ts-xs font-medium" style="color: var(--color-danger);">{{ t.copyFailed }}</p>
+                </div>
+              </div>
               <!-- Change password (password mode only) -->
               <div v-if="!resetIsHardware && !isKeylessModeActive" class="px-4 py-3 rounded-xl space-y-3" style="background: var(--bg-app); border: 1px solid var(--border);">
                 <div>
@@ -316,6 +342,7 @@ sudo update-ca-certificates</pre>
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import ToggleSwitch from './ToggleSwitch.vue'
+import { getSessionToken } from '../crypto'
 
 export interface MCPDraftRule {
   condition: string  // 'tag' | 'note_id' | 'title_glob' | 'subtree_of'
@@ -407,12 +434,39 @@ defineExpose({ onPasswordChangeResult })
 const tokenCopied = ref(false)
 let tokenCopiedTimer: ReturnType<typeof setTimeout> | null = null
 
+const davPasswordCopied = ref(false)
+const davCopyError = ref(false)
+let davSuccessTimer: ReturnType<typeof setTimeout> | null = null
+let davErrorTimer: ReturnType<typeof setTimeout> | null = null
+
 const mcpBaseUrl = computed(() => window.location.origin)
 const mcpEndpointUrl = computed(() => `${window.location.origin}/mcp/sse`)
 
 onUnmounted(() => {
   if (tokenCopiedTimer !== null) { clearTimeout(tokenCopiedTimer); tokenCopiedTimer = null }
+  if (davSuccessTimer !== null) { clearTimeout(davSuccessTimer); davSuccessTimer = null }
+  if (davErrorTimer !== null) { clearTimeout(davErrorTimer); davErrorTimer = null }
 })
+
+function copyDavPassword() {
+  const token = getSessionToken()
+  if (!token) {
+    davCopyError.value = true
+    if (davErrorTimer !== null) clearTimeout(davErrorTimer)
+    davErrorTimer = setTimeout(() => { davCopyError.value = false; davErrorTimer = null }, 3000)
+    return
+  }
+  navigator.clipboard.writeText(token).then(() => {
+    davPasswordCopied.value = true
+    davCopyError.value = false
+    if (davSuccessTimer !== null) clearTimeout(davSuccessTimer)
+    davSuccessTimer = setTimeout(() => { davPasswordCopied.value = false; davSuccessTimer = null }, 2000)
+  }).catch(() => {
+    davCopyError.value = true
+    if (davErrorTimer !== null) clearTimeout(davErrorTimer)
+    davErrorTimer = setTimeout(() => { davCopyError.value = false; davErrorTimer = null }, 3000)
+  })
+}
 
 function copyToken() {
   if (!props.mcpTokenValue) return
