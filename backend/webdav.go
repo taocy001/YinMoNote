@@ -2,10 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -169,11 +165,11 @@ func (f *davCommitFile) Close() error {
 
 // newDavHandler returns an http.Handler that serves WebDAV at the /dav prefix.
 //
-// Authentication mirrors the REST API session-token model:
-//   - SessionTokenHash set in config → require Basic Auth where the password is
-//     the raw session token (SHA-256 of password must match the stored hash).
+// Authentication mirrors the REST API SRP-6a token model:
+//   - SRPVerifier set in config → require Basic Auth where the password is
+//     the Bearer token issued by a completed SRP-6a handshake.
 //     The username field is ignored — any value is accepted.
-//   - SessionTokenHash not set → open access (same as keyless REST API mode).
+//   - SRPVerifier not set → open access (same as keyless REST API mode).
 //
 // This means WebDAV clients use the same credential as the web app.
 // In Obsidian/iA Writer: username = anything (e.g. "yinmonote"), password = the
@@ -217,10 +213,10 @@ func (s *Server) newDavHandler() http.Handler {
 		ip := davClientIP(r)
 
 		s.Library.mu.Lock()
-		tokenHash := s.Library.Config.SessionTokenHash
+		srpVerifier := s.Library.Config.SRPVerifier
 		s.Library.mu.Unlock()
 
-		if tokenHash != "" {
+		if srpVerifier != "" {
 			applyAuthDelay(ip)
 			_, pass, ok := r.BasicAuth()
 			if !ok || pass == "" {
@@ -229,16 +225,10 @@ func (s *Server) newDavHandler() http.Handler {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
-			got := sha256.Sum256([]byte(pass))
-			want, err := hex.DecodeString(tokenHash)
-			if err != nil {
-				// tokenHash in config.json is not valid hex — treat as permanent auth failure.
-				fmt.Fprintf(os.Stderr, "YinMo: WebDAV tokenHash is not valid hex: %v\n", err)
-				w.Header().Set("WWW-Authenticate", `Basic realm="YinMoNote"`)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			if subtle.ConstantTimeCompare(got[:], want) != 1 {
+			activeTokensMu.Lock()
+			_, valid := activeTokens[pass]
+			activeTokensMu.Unlock()
+			if !valid {
 				recordAuthFailure(ip)
 				w.Header().Set("WWW-Authenticate", `Basic realm="YinMoNote"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)

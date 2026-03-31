@@ -50,12 +50,14 @@ type AppConfig struct {
 	Pbkdf2Salt             string  `json:"pbkdf2Salt,omitempty"`    // Base64-encoded PBKDF2 salt, synced across devices
 	IdleTimeout            float64 `json:"idleTimeout"`            // Lock timeout in minutes
 	AllowExternalImages    bool    `json:"allowExternalImages"`    // Load external HTTP images in notes
-	// SessionTokenHash is the SHA-256 hex hash of the client-derived session token.
-	// When non-empty, all API requests must carry a matching Bearer token.
-	// Never returned to clients via GET /api/config.
-	SessionTokenHash string `json:"sessionTokenHash,omitempty"`
+	// SRPSalt is the Base64-encoded 16-byte random salt used for SRP-6a verifier
+	// computation. Generated on first password setup. Never returned via GET /api/config.
+	SRPSalt string `json:"srpSalt,omitempty"`
+	// SRPVerifier is the hex-encoded SRP-6a verifier (2048-bit big-endian integer).
+	// Computed from the password and SRPSalt during setup. Never returned via GET /api/config.
+	SRPVerifier string `json:"srpVerifier,omitempty"`
 	// MCPTokenHash is the SHA-256 hex hash of the MCP-specific bearer token.
-	// Kept separate from SessionTokenHash so the two access paths are independently revocable.
+	// Kept separate from SRP auth so the two access paths are independently revocable.
 	// Never returned to clients via GET /api/config.
 	MCPTokenHash string    `json:"mcpTokenHash,omitempty"`
 	MCPPolicy    MCPPolicy `json:"mcpPolicy"`

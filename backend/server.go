@@ -2,10 +2,7 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -103,7 +100,7 @@ func (s *Server) SetupRouter() *gin.Engine {
 	// it is the endpoint that establishes authentication in the first place.
 	r.POST("/api/auth/setup", s.handleAuthSetup)
 
-	// POST /api/test/reset-auth clears SessionTokenHash unconditionally.
+	// POST /api/test/reset-auth clears SRPVerifier and SRPSalt unconditionally.
 	// Available ONLY when SYNC_COMMIT=1 (the E2E test environment variable).
 	// This lets the E2E test suite restore the server to open/keyless state after
 	// password-mode tests, without needing the current session token.
@@ -111,14 +108,13 @@ func (s *Server) SetupRouter() *gin.Engine {
 		r.POST("/api/test/reset-auth", s.handleTestResetAuth)
 	}
 
-	// GET /api/auth/salt — unauthenticated; returns the PBKDF2 salt so new
-	// devices can derive the correct key before authenticating.
-	r.GET("/api/auth/salt", func(c *gin.Context) {
-		s.Library.mu.Lock()
-		salt := s.Library.Config.Pbkdf2Salt
-		s.Library.mu.Unlock()
-		c.JSON(200, gin.H{"pbkdf2Salt": salt})
-	})
+	// POST /api/auth/srp/init — unauthenticated; starts SRP-6a handshake.
+	// Client sends A; server responds with B and the SRP salt.
+	r.POST("/api/auth/srp/init", s.handleSRPInit)
+
+	// POST /api/auth/srp/verify — unauthenticated; completes SRP-6a handshake.
+	// Client sends M1; server validates and returns Bearer token + M2.
+	r.POST("/api/auth/srp/verify", s.handleSRPVerify)
 
 	api := r.Group("/api", s.apiAuth())
 	{
@@ -289,8 +285,9 @@ func (s *Server) handleGetConfig(c *gin.Context) {
 	cfg := s.Library.Config
 	mcpTokenSet := cfg.MCPTokenHash != ""
 	s.Library.mu.Unlock()
-	// Never expose token hashes to clients.
-	cfg.SessionTokenHash = ""
+	// Never expose authentication secrets to clients.
+	cfg.SRPSalt = ""
+	cfg.SRPVerifier = ""
 	cfg.MCPTokenHash = ""
 	// Augment with a boolean so the UI can tell whether an MCP token is configured
 	// without receiving the hash itself.
@@ -326,7 +323,8 @@ func (s *Server) handleUpdateConfig(c *gin.Context) {
 	defer s.Library.mu.Unlock()
 	// Preserve fields that clients must not override.
 	cfg.Port = s.Library.Config.Port
-	cfg.SessionTokenHash = s.Library.Config.SessionTokenHash
+	cfg.SRPSalt = s.Library.Config.SRPSalt
+	cfg.SRPVerifier = s.Library.Config.SRPVerifier
 	cfg.MCPTokenHash = s.Library.Config.MCPTokenHash
 	// Preserve salt if client didn't send one (partial update must not clear it)
 	if cfg.Pbkdf2Salt == "" { cfg.Pbkdf2Salt = s.Library.Config.Pbkdf2Salt }
@@ -819,6 +817,13 @@ var (
 	// progressive-delay path. Without this cap, an attacker with many source IPs
 	// could exhaust the goroutine pool by triggering delays from all of them at once.
 	authDelaySem = make(chan struct{}, 20)
+
+	// activeTokens holds the set of Bearer tokens issued by the SRP handshake.
+	// Tokens are stored as their raw string; each token is a 32-byte random value
+	// encoded as base64url. The map is cleared when the password is changed or reset.
+	activeTokens       = make(map[string]struct{})
+	activeTokenExpiry  = make(map[string]time.Time) // TTL: 24 hours from issue
+	activeTokensMu     sync.Mutex
 )
 
 func init() {
@@ -836,6 +841,23 @@ func init() {
 				}
 			}
 			authFailuresMu.Unlock()
+		}
+	}()
+
+	// Evict SRP Bearer tokens that have exceeded their 24-hour TTL.
+	// This bounds the activeTokens map size on long-running servers.
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			now := time.Now()
+			activeTokensMu.Lock()
+			for tok, exp := range activeTokenExpiry {
+				if now.After(exp) {
+					delete(activeTokens, tok)
+					delete(activeTokenExpiry, tok)
+				}
+			}
+			activeTokensMu.Unlock()
 		}
 	}()
 }
@@ -892,21 +914,21 @@ func clearAuthFailures(ip string) {
 
 // apiAuth is the primary authentication middleware.
 // Priority:
-//  1. SessionTokenHash set → require "Authorization: Bearer <token>" whose SHA-256
-//     hex matches the stored hash.
+//  1. SRPVerifier set → require "Authorization: Bearer <token>" that was issued
+//     by a completed SRP-6a handshake and is present in the in-memory activeTokens set.
 //  2. AUTH_USER env set → fall back to HTTP Basic Auth (legacy deployments).
 //  3. Neither set → open access (keyless / initial setup phase).
 //
-// Progressive delay (same as basicAuth) is applied on Bearer token mismatches to
-// slow brute-force attempts without locking out legitimate users.
+// Progressive delay is applied on Bearer token mismatches to slow brute-force
+// attempts without locking out legitimate users.
 func (s *Server) apiAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		s.Library.mu.Lock()
-		tokenHash := s.Library.Config.SessionTokenHash
+		srpVerifier := s.Library.Config.SRPVerifier
 		s.Library.mu.Unlock()
 
-		if tokenHash != "" {
-			// Token auth is configured — require a matching Bearer token.
+		if srpVerifier != "" {
+			// SRP auth is configured — require a valid Bearer token from the active set.
 			ip := c.ClientIP()
 			applyAuthDelay(ip)
 
@@ -917,16 +939,12 @@ func (s *Server) apiAuth() gin.HandlerFunc {
 				c.AbortWithStatus(401)
 				return
 			}
-			h := sha256.Sum256([]byte(token))
-			tokenHashBytes, err := hex.DecodeString(tokenHash)
-			if err != nil {
-				// tokenHash in config.json is not valid hex — log and treat as auth failure.
-				fmt.Fprintf(os.Stderr, "YinMo: apiAuth tokenHash is not valid hex: %v\n", err)
-				recordAuthFailure(ip)
-				c.AbortWithStatus(401)
-				return
-			}
-			if subtle.ConstantTimeCompare(h[:], tokenHashBytes) != 1 {
+
+			activeTokensMu.Lock()
+			_, valid := activeTokens[token]
+			activeTokensMu.Unlock()
+
+			if !valid {
 				recordAuthFailure(ip)
 				c.AbortWithStatus(401)
 				return
@@ -936,7 +954,7 @@ func (s *Server) apiAuth() gin.HandlerFunc {
 			return
 		}
 
-		// No token hash — fall back to Basic Auth if configured, otherwise open.
+		// No SRP verifier — fall back to Basic Auth if configured, otherwise open.
 		if os.Getenv("AUTH_USER") != "" {
 			s.basicAuth()(c)
 			return
@@ -950,121 +968,221 @@ func (s *Server) apiAuth() gin.HandlerFunc {
 // "enter password" flow instead of the "initialize library" (first-time) flow.
 func (s *Server) handleAuthStatus(c *gin.Context) {
 	s.Library.mu.Lock()
-	initialized := s.Library.Config.SessionTokenHash != ""
+	initialized := s.Library.Config.SRPVerifier != ""
 	s.Library.mu.Unlock()
 	c.JSON(http.StatusOK, gin.H{"initialized": initialized})
 }
 
-// handleAuthSetup registers, rotates, or clears the session token hash.
-//   - First call (no hash stored): succeeds unconditionally — "claim" window after deployment.
-//   - token_hash non-empty: sets/rotates the hash; requires current Bearer token if a hash is stored.
-//   - token_hash empty string: clears the hash (reverts to open/keyless access);
-//     requires current Bearer token if a hash is already stored.
+// handleAuthSetup stores the SRP verifier and salt for a new password, or
+// clears them (reverts to open/keyless access) when the verifier is empty.
+//
+//   - First call (no SRPVerifier stored): succeeds unconditionally — "claim"
+//     window immediately after a fresh deployment.
+//   - srpVerifier non-empty: stores/rotates the verifier; requires a valid
+//     Bearer token if a verifier is already set.
+//   - srpVerifier empty string: clears auth (reverts to keyless access);
+//     requires a valid Bearer token if a verifier is already set.
 func (s *Server) handleAuthSetup(c *gin.Context) {
 	var req struct {
-		TokenHash string `json:"token_hash"`
+		SRPSalt     string `json:"srpSalt"`
+		SRPVerifier string `json:"srpVerifier"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
-	// Validate: must be empty (clear) or exactly 64 lowercase hex chars (SHA-256 output).
-	if req.TokenHash != "" {
-		if len(req.TokenHash) != 64 {
-			c.JSON(400, gin.H{"error": "invalid_token_hash"})
-			return
-		}
-		for _, r := range req.TokenHash {
-			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
-				c.JSON(400, gin.H{"error": "invalid_token_hash"})
-				return
-			}
-		}
+
+	// If both are empty, treat as a clear request (handled below).
+	// If setting, both fields must be present.
+	if req.SRPVerifier != "" && req.SRPSalt == "" {
+		c.JSON(400, gin.H{"error": "srpSalt required when setting srpVerifier"})
+		return
 	}
 
 	ip := c.ClientIP()
 
-	// Hold the lock across the entire read-verify-write sequence to prevent two
-	// concurrent requests from both seeing existingHash=="" and both registering
-	// different hashes, or from racing on a token rotation.
 	s.Library.mu.Lock()
-	existingHash := s.Library.Config.SessionTokenHash
+	existingVerifier := s.Library.Config.SRPVerifier
 
-	if existingHash != "" {
-		// Hash already set — caller must prove ownership with the current token.
-		// Apply the same progressive delay used by other auth endpoints to prevent
-		// brute-force enumeration of the session token.
+	if existingVerifier != "" {
+		// Verifier already set — caller must present a valid active Bearer token.
 		s.Library.mu.Unlock()
 		applyAuthDelay(ip)
 		auth := c.GetHeader("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if !strings.HasPrefix(auth, "Bearer ") || token == "" {
 			recordAuthFailure(ip)
 			c.AbortWithStatus(401)
 			return
 		}
-		token := strings.TrimPrefix(auth, "Bearer ")
-		h := sha256.Sum256([]byte(token))
-		hashBytes, err := hex.DecodeString(existingHash)
-		if err != nil || subtle.ConstantTimeCompare(h[:], hashBytes) != 1 {
+		activeTokensMu.Lock()
+		_, valid := activeTokens[token]
+		activeTokensMu.Unlock()
+		if !valid {
 			recordAuthFailure(ip)
 			c.AbortWithStatus(401)
 			return
 		}
 		clearAuthFailures(ip)
 		s.Library.mu.Lock()
-		// TOCTOU guard: re-verify hash hasn't changed while we were authenticating.
-		if s.Library.Config.SessionTokenHash != existingHash {
+		// TOCTOU guard: re-check verifier hasn't changed while we were authenticating.
+		if s.Library.Config.SRPVerifier != existingVerifier {
 			s.Library.mu.Unlock()
 			c.JSON(409, gin.H{"error": "concurrent_modification"})
 			return
 		}
 	}
 
-	// Write config to disk while holding the lock, then update in-memory state
-	// only after the write succeeds. This prevents TOCTOU: if the disk write
-	// fails, in-memory Config stays unchanged and the user can retry.
-	oldHash := s.Library.Config.SessionTokenHash
-	s.Library.Config.SessionTokenHash = req.TokenHash
+	// Persist to disk before updating in-memory state.
+	oldSalt := s.Library.Config.SRPSalt
+	oldVerifier := s.Library.Config.SRPVerifier
+	s.Library.Config.SRPSalt = req.SRPSalt
+	s.Library.Config.SRPVerifier = req.SRPVerifier
 	cfg := s.Library.Config
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		s.Library.Config.SessionTokenHash = oldHash
+		s.Library.Config.SRPSalt = oldSalt
+		s.Library.Config.SRPVerifier = oldVerifier
 		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "marshal_failed"})
 		return
 	}
 	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
-		s.Library.Config.SessionTokenHash = oldHash
+		s.Library.Config.SRPSalt = oldSalt
+		s.Library.Config.SRPVerifier = oldVerifier
 		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "write_failed"})
 		return
 	}
 	s.Library.mu.Unlock()
-	c.JSON(200, gin.H{"status": "ok"})
+
+	// Invalidate all existing sessions whenever auth is changed or cleared.
+	activeTokensMu.Lock()
+	activeTokens = make(map[string]struct{})
+	activeTokenExpiry = make(map[string]time.Time)
+	activeTokensMu.Unlock()
+
+	c.JSON(200, gin.H{"ok": true})
 }
 
-// handleTestResetAuth clears SessionTokenHash unconditionally.
+// handleSRPInit starts an SRP-6a handshake.
+// The client sends its ephemeral public key A; the server responds with B
+// and the stored SRP salt. The session is keyed by pad256(A) and expires
+// after 5 minutes if not completed with /srp/verify.
+func (s *Server) handleSRPInit(c *gin.Context) {
+	var req struct {
+		A string `json:"A"` // client ephemeral public key, hex string
+	}
+	if err := c.BindJSON(&req); err != nil {
+		return
+	}
+	if req.A == "" {
+		c.JSON(400, gin.H{"error": "A required"})
+		return
+	}
+
+	s.Library.mu.Lock()
+	verifier := s.Library.Config.SRPVerifier
+	salt := s.Library.Config.SRPSalt
+	s.Library.mu.Unlock()
+
+	if verifier == "" {
+		// No password set — SRP handshake is meaningless.
+		c.JSON(400, gin.H{"error": "not_initialized"})
+		return
+	}
+
+	ip := c.ClientIP()
+	applyAuthDelay(ip)
+
+	bHex, err := srpInitHandshake(req.A, verifier)
+	if err != nil {
+		recordAuthFailure(ip)
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"salt": salt,
+		"B":    bHex,
+	})
+}
+
+// handleSRPVerify completes the SRP-6a handshake.
+// The client sends M1 (proof of password knowledge); the server validates it,
+// issues a Bearer token, and returns M2 (proof of server knowledge).
+func (s *Server) handleSRPVerify(c *gin.Context) {
+	var req struct {
+		A  string `json:"A"`  // same A sent to /srp/init, for session lookup
+		M1 string `json:"M1"` // client proof
+	}
+	if err := c.BindJSON(&req); err != nil {
+		return
+	}
+	if req.A == "" || req.M1 == "" {
+		c.JSON(400, gin.H{"error": "A and M1 required"})
+		return
+	}
+
+	ip := c.ClientIP()
+	applyAuthDelay(ip)
+
+	m2Hex, token, err := srpVerifyHandshake(req.A, req.M1)
+	if err != nil {
+		recordAuthFailure(ip)
+		// Return a uniform 401 for all verify failures to prevent the caller
+		// from distinguishing "session not found" from "wrong password" via
+		// HTTP status codes or error body strings.
+		c.JSON(401, gin.H{"error": "authentication_failed"})
+		return
+	}
+
+	// Register the issued token with a 24-hour TTL.
+	activeTokensMu.Lock()
+	activeTokens[token] = struct{}{}
+	activeTokenExpiry[token] = time.Now().Add(24 * time.Hour)
+	activeTokensMu.Unlock()
+
+	clearAuthFailures(ip)
+	c.JSON(200, gin.H{
+		"token": token,
+		"M2":    m2Hex,
+	})
+}
+
+// handleTestResetAuth clears SRPVerifier and SRPSalt unconditionally.
 // Registered ONLY when SYNC_COMMIT=1 (E2E test environment).
 // Allows E2E teardown to restore open/keyless access after password-mode tests
 // without needing the current session token.
 func (s *Server) handleTestResetAuth(c *gin.Context) {
 	s.Library.mu.Lock()
-	oldHash := s.Library.Config.SessionTokenHash
-	s.Library.Config.SessionTokenHash = ""
+	oldSalt := s.Library.Config.SRPSalt
+	oldVerifier := s.Library.Config.SRPVerifier
+	s.Library.Config.SRPSalt = ""
+	s.Library.Config.SRPVerifier = ""
 	cfg := s.Library.Config
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		s.Library.Config.SessionTokenHash = oldHash
+		s.Library.Config.SRPSalt = oldSalt
+		s.Library.Config.SRPVerifier = oldVerifier
 		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "marshal_failed"})
 		return
 	}
 	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
-		s.Library.Config.SessionTokenHash = oldHash
+		s.Library.Config.SRPSalt = oldSalt
+		s.Library.Config.SRPVerifier = oldVerifier
 		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "write_failed"})
 		return
 	}
 	s.Library.mu.Unlock()
+
+	// Invalidate all active Bearer tokens on reset.
+	activeTokensMu.Lock()
+	activeTokens = make(map[string]struct{})
+	activeTokenExpiry = make(map[string]time.Time)
+	activeTokensMu.Unlock()
+
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
