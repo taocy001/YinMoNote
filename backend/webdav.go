@@ -340,6 +340,20 @@ func (s *Server) newDavHandler() http.Handler {
 			}
 			clearAuthFailures(ip)
 		}
+		// Reject WebDAV access when server-side encryption is enabled.
+		// Files on disk contain ENC1-prefixed ciphertext unreadable by third-party
+		// WebDAV apps, and any write would corrupt the encrypted note store.
+		s.Library.mu.Lock()
+		serverEncrypt := s.Library.Config.ServerEncrypt
+		s.Library.mu.Unlock()
+		if serverEncrypt {
+			w.Header().Set("X-YinMo-Error", "server-encrypt-incompatible")
+			http.Error(w,
+				"WebDAV is not available when server-side encryption is enabled. "+
+					"Disable server encryption in Settings before using WebDAV clients.",
+				http.StatusServiceUnavailable)
+			return
+		}
 		davH.ServeHTTP(w, r)
 	})
 }

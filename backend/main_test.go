@@ -3271,3 +3271,40 @@ func TestDavQuota(t *testing.T) {
 		assert.Equal(t, "new content", string(got))
 	})
 }
+
+// TestDavServerEncryptBlock verifies that WebDAV returns 503 when server-side
+// encryption is enabled (P5), protecting the encrypted note store from corruption.
+func TestDavServerEncryptBlock(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(dir, "config.json"))
+	lib.Config.ServerEncrypt = true
+	srv := &Server{Library: lib}
+	davH := srv.newDavHandler()
+
+	methods := []string{"GET", "PUT", "DELETE", "PROPFIND", "MKCOL"}
+	for _, method := range methods {
+		t.Run("blocked_method_"+method, func(t *testing.T) {
+			var body *strings.Reader
+			if method == "PUT" {
+				body = strings.NewReader("content")
+			} else {
+				body = strings.NewReader("")
+			}
+			req, _ := http.NewRequest(method, "/dav/some-note.md", body)
+			w := httptest.NewRecorder()
+			davH.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusServiceUnavailable, w.Code,
+				"method %s should return 503 when serverEncrypt is enabled", method)
+			assert.Equal(t, "server-encrypt-incompatible", w.Header().Get("X-YinMo-Error"))
+		})
+	}
+
+	t.Run("503_includes_explanation", func(t *testing.T) {
+		req, _ := http.NewRequest("PROPFIND", "/dav/", strings.NewReader(""))
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.Contains(t, w.Body.String(), "server-side encryption")
+	})
+}
