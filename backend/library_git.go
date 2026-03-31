@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,7 +188,7 @@ func (l *NoteLibrary) StartGitGC() {
 		cmd := exec.Command("git", "gc", "--auto", "--quiet")
 		cmd.Dir = l.DataDir
 		if err := cmd.Run(); err != nil {
-			log.Printf("[YinMo] git gc failed: %v", err)
+			fmt.Fprintf(os.Stderr, "[YinMo] git gc failed: %v\n", err)
 		}
 	}
 }

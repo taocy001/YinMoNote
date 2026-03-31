@@ -174,6 +174,9 @@ func (l *NoteLibrary) reconcileStructure() {
 
 	// 5b. Remove stale Parents entries: keys no longer on disk or whose parent
 	// folder ID was deleted during the ChildOrder cleanup above.
+	// MUST run after step 5 modifies ChildOrder — this step checks folderExists
+	// against the already-pruned ChildOrder, so running it before step 5 would
+	// retain Parents entries whose parent folder was just removed.
 	if st.Parents != nil {
 		for key, parentID := range st.Parents {
 			if strings.HasSuffix(key, ".md") && !actualFiles[key] {
@@ -187,11 +190,18 @@ func (l *NoteLibrary) reconcileStructure() {
 	}
 
 	// 6. Append files that exist on disk but are absent from the structure.
+	// Collect new names first so the append order is deterministic (sorted),
+	// not dependent on Go map iteration order.
+	newNames := make([]string, 0)
 	for name := range actualFiles {
 		if !referenced[name] {
-			st.Order = append(st.Order, name)
+			newNames = append(newNames, name)
 			changed = true
 		}
+	}
+	if len(newNames) > 0 {
+		sort.Strings(newNames)
+		st.Order = append(st.Order, newNames...)
 	}
 
 	if !changed {

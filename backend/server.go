@@ -337,7 +337,9 @@ func (s *Server) handleUpdateConfig(c *gin.Context) {
 	cfg.MCPTokenHash = s.Library.Config.MCPTokenHash
 	cfg.WebDAVTokenHash = s.Library.Config.WebDAVTokenHash
 	// Preserve salt if client didn't send one (partial update must not clear it)
-	if cfg.Pbkdf2Salt == "" { cfg.Pbkdf2Salt = s.Library.Config.Pbkdf2Salt }
+	if cfg.Pbkdf2Salt == "" {
+		cfg.Pbkdf2Salt = s.Library.Config.Pbkdf2Salt
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		c.JSON(500, gin.H{"error": "marshal_failed"})
@@ -1180,7 +1182,14 @@ func (s *Server) handleSRPVerify(c *gin.Context) {
 	}
 
 	// Register the issued token with a 24-hour TTL.
+	// Cap the map at 1000 entries to prevent memory exhaustion from rapid
+	// token issuance (e.g. repeated SRP handshakes without reusing tokens).
 	activeTokensMu.Lock()
+	if len(activeTokens) >= 1000 {
+		activeTokensMu.Unlock()
+		c.JSON(503, gin.H{"error": "token_capacity_exceeded"})
+		return
+	}
 	activeTokens[token] = struct{}{}
 	activeTokenExpiry[token] = time.Now().Add(24 * time.Hour)
 	activeTokensMu.Unlock()

@@ -701,13 +701,11 @@ func TestHandleGetVersionHashValidation(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code, "uppercase hex should be rejected")
 	})
 
-	t.Run("Valid format hash that doesn't exist returns 200 with empty content", func(t *testing.T) {
-		// go-git returns "" for an unknown hash; the handler returns 200 with empty content
+	t.Run("Valid format hash that doesn't exist returns 404", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/api/notes/"+noteName+"/version/0000000000000000000000000000000000000000", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		// Format was valid, so no 400; the content may be empty
-		assert.NotEqual(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 }
 
