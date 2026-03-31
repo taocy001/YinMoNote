@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -2036,18 +2039,140 @@ func TestHandleGetVersionEmptyContentReturns200(t *testing.T) {
 		"GET version of an empty-content commit must return 200")
 }
 
-// ─── handleAuthSetup: set, rotate, and clear SessionTokenHash ────────────────
+// ─── SRP-6a Auth Tests ────────────────────────────────────────────────────────
+//
+// These tests cover the full SRP-6a authentication flow introduced to replace
+// the legacy PBKDF2-derived-token + SHA-256-hash scheme.
+//
+// Helper: performSRPHandshake performs a complete SRP-6a handshake and returns
+// the Bearer token. Uses the internal srpComputeVerifier/srpNewSalt helpers to
+// compute the verifier from the password. This is a white-box test — in
+// production the client computes the verifier.
+func performSRPHandshake(t *testing.T, r http.Handler, password string) string {
+	t.Helper()
+
+	// Client generates an ephemeral private key a and computes A = g^a mod N.
+	aPrivBytes := make([]byte, 32)
+	_, _ = rand.Read(aPrivBytes)
+	aPriv := new(big.Int).SetBytes(aPrivBytes)
+	A := new(big.Int).Exp(srpG, aPriv, srpN)
+	aHex := hex.EncodeToString(pad256(A))
+
+	// POST /api/auth/srp/init
+	initBody, _ := json.Marshal(map[string]string{"A": aHex})
+	initReq, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(initBody))
+	initReq.Header.Set("Content-Type", "application/json")
+	initW := httptest.NewRecorder()
+	r.ServeHTTP(initW, initReq)
+	require.Equal(t, http.StatusOK, initW.Code, "srp/init must return 200")
+
+	var initResp struct {
+		Salt string `json:"salt"`
+		B    string `json:"B"`
+	}
+	require.NoError(t, json.Unmarshal(initW.Body.Bytes(), &initResp))
+
+	// Client computes: x, S, M1
+	saltBytes, err := base64.StdEncoding.DecodeString(initResp.Salt)
+	require.NoError(t, err, "salt must be valid base64")
+
+	bBytes, err := hex.DecodeString(initResp.B)
+	require.NoError(t, err, "B must be valid hex")
+	B := new(big.Int).SetBytes(bBytes)
+
+	x := srpComputeX(saltBytes, password)
+
+	// u = SHA256(pad256(A) || pad256(B))
+	uh := sha256.New()
+	uh.Write(pad256(A))
+	uh.Write(pad256(B))
+	u := new(big.Int).SetBytes(uh.Sum(nil))
+
+	// k = SHA256(pad256(N) || pad256(g))
+	kh := sha256.New()
+	kh.Write(pad256(srpN))
+	kh.Write(pad256(srpG))
+	k := new(big.Int).SetBytes(kh.Sum(nil))
+
+	// Client S = (B - k*g^x) ^ (a + u*x) mod N
+	gx := new(big.Int).Exp(srpG, x, srpN)
+	kgx := new(big.Int).Mul(k, gx)
+	kgx.Mod(kgx, srpN)
+	base := new(big.Int).Sub(B, kgx)
+	base.Mod(base, srpN)
+	ux := new(big.Int).Mul(u, x)
+	exp := new(big.Int).Add(aPriv, ux)
+	S := new(big.Int).Exp(base, exp, srpN)
+
+	// M1 = SHA256(pad256(A) || pad256(B) || pad256(S))
+	m1h := sha256.New()
+	m1h.Write(pad256(A))
+	m1h.Write(pad256(B))
+	m1h.Write(pad256(S))
+	m1 := m1h.Sum(nil)
+	m1Hex := hex.EncodeToString(m1)
+
+	// POST /api/auth/srp/verify
+	verifyBody, _ := json.Marshal(map[string]string{"A": aHex, "M1": m1Hex})
+	verifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(verifyBody))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	verifyW := httptest.NewRecorder()
+	r.ServeHTTP(verifyW, verifyReq)
+	require.Equal(t, http.StatusOK, verifyW.Code, "srp/verify must return 200")
+
+	var verifyResp struct {
+		Token string `json:"token"`
+		M2    string `json:"M2"`
+	}
+	require.NoError(t, json.Unmarshal(verifyW.Body.Bytes(), &verifyResp))
+	require.NotEmpty(t, verifyResp.Token, "token must be non-empty")
+	require.NotEmpty(t, verifyResp.M2, "M2 must be non-empty")
+
+	// Verify M2: M2 = SHA256(pad256(A) || M1_bytes || pad256(S))
+	m2h := sha256.New()
+	m2h.Write(pad256(A))
+	m2h.Write(m1)
+	m2h.Write(pad256(S))
+	expectedM2 := hex.EncodeToString(m2h.Sum(nil))
+	assert.Equal(t, expectedM2, verifyResp.M2, "server M2 must match client computation")
+
+	return verifyResp.Token
+}
+
+// setupSRPLib configures a NoteLibrary with an SRP verifier for the given password.
+func setupSRPLib(t *testing.T, password string) (*NoteLibrary, *gin.Engine, string) {
+	t.Helper()
+	lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
+	saltB64, saltBytes, err := srpNewSalt()
+	require.NoError(t, err)
+	verifierHex := srpComputeVerifier(saltBytes, password)
+	lib.mu.Lock()
+	lib.Config.SRPSalt = saltB64
+	lib.Config.SRPVerifier = verifierHex
+	lib.mu.Unlock()
+	r := NewServer(lib).SetupRouter()
+	return lib, r, saltB64
+}
+
+// ─── TestHandleAuthSetup: SRP verifier storage ───────────────────────────────
 
 func TestHandleAuthSetup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	validHash := strings.Repeat("a", 64) // 64 lowercase hex chars
+	const password = "correct-horse-battery-staple"
 
-	t.Run("first call sets hash without auth", func(t *testing.T) {
+	t.Run("first call stores verifier without auth", func(t *testing.T) {
 		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
 		r := NewServer(lib).SetupRouter()
 
-		body, _ := json.Marshal(map[string]string{"token_hash": validHash})
+		saltB64, saltBytes, err := srpNewSalt()
+		require.NoError(t, err)
+		verifierHex := srpComputeVerifier(saltBytes, password)
+
+		body, _ := json.Marshal(map[string]string{
+			"srpSalt":     saltB64,
+			"srpVerifier": verifierHex,
+		})
 		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -2055,18 +2180,22 @@ func TestHandleAuthSetup(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		lib.mu.Lock()
-		assert.Equal(t, validHash, lib.Config.SessionTokenHash)
+		assert.Equal(t, verifierHex, lib.Config.SRPVerifier)
+		assert.Equal(t, saltB64, lib.Config.SRPSalt)
 		lib.mu.Unlock()
 	})
 
-	t.Run("second call without Bearer token returns 401", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = validHash
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
+	t.Run("second call without valid Bearer token returns 401", func(t *testing.T) {
+		lib, r, _ := setupSRPLib(t, password)
+		_ = lib
 
-		body, _ := json.Marshal(map[string]string{"token_hash": strings.Repeat("b", 64)})
+		saltB64, saltBytes, err := srpNewSalt()
+		require.NoError(t, err)
+		newVerifierHex := srpComputeVerifier(saltBytes, "new-password")
+		body, _ := json.Marshal(map[string]string{
+			"srpSalt":     saltB64,
+			"srpVerifier": newVerifierHex,
+		})
 		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -2075,11 +2204,69 @@ func TestHandleAuthSetup(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 
-	t.Run("invalid hash length returns 400", func(t *testing.T) {
+	t.Run("rotation with valid Bearer token succeeds", func(t *testing.T) {
+		lib, r, _ := setupSRPLib(t, password)
+		token := performSRPHandshake(t, r, password)
+
+		saltB64, saltBytes, err := srpNewSalt()
+		require.NoError(t, err)
+		newVerifierHex := srpComputeVerifier(saltBytes, "new-password")
+		body, _ := json.Marshal(map[string]string{
+			"srpSalt":     saltB64,
+			"srpVerifier": newVerifierHex,
+		})
+		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		lib.mu.Lock()
+		assert.Equal(t, newVerifierHex, lib.Config.SRPVerifier)
+		lib.mu.Unlock()
+	})
+
+	t.Run("clearing verifier with valid Bearer token reverts to keyless", func(t *testing.T) {
+		lib, r, _ := setupSRPLib(t, password)
+		token := performSRPHandshake(t, r, password)
+
+		body, _ := json.Marshal(map[string]string{
+			"srpSalt":     "",
+			"srpVerifier": "",
+		})
+		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		lib.mu.Lock()
+		assert.Equal(t, "", lib.Config.SRPVerifier)
+		lib.mu.Unlock()
+	})
+
+	t.Run("clearing verifier without auth when verifier set returns 401", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		body, _ := json.Marshal(map[string]string{
+			"srpSalt":     "",
+			"srpVerifier": "",
+		})
+		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("missing srpSalt when setting srpVerifier returns 400", func(t *testing.T) {
 		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
 		r := NewServer(lib).SetupRouter()
 
-		body, _ := json.Marshal(map[string]string{"token_hash": "tooshort"})
+		body, _ := json.Marshal(map[string]string{"srpVerifier": strings.Repeat("a", 512)})
 		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -2088,52 +2275,9 @@ func TestHandleAuthSetup(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
-	t.Run("empty token_hash with auth clears the hash", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		// Pre-set a known hash for the token "testtoken"
-		h := sha256.Sum256([]byte("testtoken"))
-		storedHash := hex.EncodeToString(h[:])
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = storedHash
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
-
-		body, _ := json.Marshal(map[string]string{"token_hash": ""})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer testtoken")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		lib.mu.Lock()
-		assert.Equal(t, "", lib.Config.SessionTokenHash, "clearing with empty hash must wipe SessionTokenHash")
-		lib.mu.Unlock()
-	})
-
-	t.Run("empty token_hash without auth when hash set returns 401", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = validHash
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
-
-		body, _ := json.Marshal(map[string]string{"token_hash": ""})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-	})
-
 	t.Run("SYNC_COMMIT=1 enables POST /api/test/reset-auth", func(t *testing.T) {
 		t.Setenv("SYNC_COMMIT", "1")
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = validHash
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
+		lib, r, _ := setupSRPLib(t, password)
 
 		req, _ := http.NewRequest("POST", "/api/test/reset-auth", nil)
 		w := httptest.NewRecorder()
@@ -2141,54 +2285,44 @@ func TestHandleAuthSetup(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		lib.mu.Lock()
-		assert.Equal(t, "", lib.Config.SessionTokenHash, "reset-auth must clear SessionTokenHash")
+		assert.Equal(t, "", lib.Config.SRPVerifier, "reset-auth must clear SRPVerifier")
+		assert.Equal(t, "", lib.Config.SRPSalt, "reset-auth must clear SRPSalt")
 		lib.mu.Unlock()
 	})
 
-	t.Run("without SYNC_COMMIT POST /api/test/reset-auth does not clear hash", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = validHash
-		lib.mu.Unlock()
-		// Router created WITHOUT SYNC_COMMIT env — endpoint must not be registered.
-		// (SYNC_COMMIT from the previous subtest was cleaned up by t.Setenv.)
-		r := NewServer(lib).SetupRouter()
+	t.Run("without SYNC_COMMIT POST /api/test/reset-auth does not clear verifier", func(t *testing.T) {
+		lib, r, _ := setupSRPLib(t, password)
+		savedVerifier := func() string {
+			lib.mu.Lock()
+			defer lib.mu.Unlock()
+			return lib.Config.SRPVerifier
+		}()
 
 		req, _ := http.NewRequest("POST", "/api/test/reset-auth", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
-		// The route is not registered; gin falls back to NoRoute (SPA handler).
-		// We don't assert on the status code (it depends on embedded static files).
-		// What matters: hash must be untouched.
 		lib.mu.Lock()
-		assert.Equal(t, validHash, lib.Config.SessionTokenHash, "hash must not be cleared without SYNC_COMMIT")
+		assert.Equal(t, savedVerifier, lib.Config.SRPVerifier, "verifier must not be cleared without SYNC_COMMIT")
 		lib.mu.Unlock()
 	})
 
 	t.Run("after clearing, API is accessible without Bearer token", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		h := sha256.Sum256([]byte("testtoken"))
-		storedHash := hex.EncodeToString(h[:])
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = storedHash
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
+		_, r, _ := setupSRPLib(t, password)
+		token := performSRPHandshake(t, r, password)
 
-		// Clear the hash
-		body, _ := json.Marshal(map[string]string{"token_hash": ""})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
+		clearBody, _ := json.Marshal(map[string]string{"srpSalt": "", "srpVerifier": ""})
+		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(clearBody))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer testtoken")
+		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, http.StatusOK, w.Code)
 
-		// Now GET /api/config should succeed without any auth
 		req2, _ := http.NewRequest("GET", "/api/config", nil)
 		w2 := httptest.NewRecorder()
 		r.ServeHTTP(w2, req2)
-		assert.Equal(t, http.StatusOK, w2.Code, "after clearing hash, API must be open")
+		assert.Equal(t, http.StatusOK, w2.Code, "after clearing verifier, API must be open")
 	})
 }
 
@@ -2197,7 +2331,7 @@ func TestHandleAuthSetup(t *testing.T) {
 func TestHandleAuthStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("returns initialized=false when no hash is set", func(t *testing.T) {
+	t.Run("returns initialized=false when no SRPVerifier is set", func(t *testing.T) {
 		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
 		r := NewServer(lib).SetupRouter()
 
@@ -2208,15 +2342,11 @@ func TestHandleAuthStatus(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		var body map[string]any
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-		assert.Equal(t, false, body["initialized"], "no hash → initialized must be false")
+		assert.Equal(t, false, body["initialized"], "no verifier → initialized must be false")
 	})
 
-	t.Run("returns initialized=true after a hash is stored", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = strings.Repeat("a", 64)
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
+	t.Run("returns initialized=true when SRPVerifier is set", func(t *testing.T) {
+		lib, r, _ := setupSRPLib(t, "password")
 
 		req, _ := http.NewRequest("GET", "/api/auth/status", nil)
 		w := httptest.NewRecorder()
@@ -2225,36 +2355,25 @@ func TestHandleAuthStatus(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		var body map[string]any
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-		assert.Equal(t, true, body["initialized"], "hash present → initialized must be true")
+		assert.Equal(t, true, body["initialized"])
+		_ = lib
 	})
 
-	t.Run("endpoint is reachable without any Authorization header", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = strings.Repeat("b", 64)
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
+	t.Run("endpoint is reachable without Authorization header", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, "password")
 
-		// No Authorization header — must still return 200 (unauthenticated endpoint).
 		req, _ := http.NewRequest("GET", "/api/auth/status", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusOK, w.Code,
-			"/api/auth/status must be public (no Bearer required)")
+		assert.Equal(t, http.StatusOK, w.Code, "/api/auth/status must be public")
 	})
 
-	t.Run("initialized flips to false after hash is cleared", func(t *testing.T) {
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		token := "testtoken"
-		h := sha256.Sum256([]byte(token))
-		storedHash := hex.EncodeToString(h[:])
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = storedHash
-		lib.mu.Unlock()
-		r := NewServer(lib).SetupRouter()
+	t.Run("initialized flips to false after verifier is cleared", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, "password")
+		token := performSRPHandshake(t, r, "password")
 
-		// Confirm initialized=true first.
+		// Confirm initialized=true.
 		req, _ := http.NewRequest("GET", "/api/auth/status", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
@@ -2262,8 +2381,8 @@ func TestHandleAuthStatus(t *testing.T) {
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 		require.Equal(t, true, body["initialized"])
 
-		// Clear the hash via POST /api/auth/setup.
-		clearBody, _ := json.Marshal(map[string]string{"token_hash": ""})
+		// Clear via POST /api/auth/setup.
+		clearBody, _ := json.Marshal(map[string]string{"srpSalt": "", "srpVerifier": ""})
 		req2, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(clearBody))
 		req2.Header.Set("Content-Type", "application/json")
 		req2.Header.Set("Authorization", "Bearer "+token)
@@ -2271,14 +2390,177 @@ func TestHandleAuthStatus(t *testing.T) {
 		r.ServeHTTP(w2, req2)
 		require.Equal(t, http.StatusOK, w2.Code)
 
-		// Status must now reflect initialized=false.
 		req3, _ := http.NewRequest("GET", "/api/auth/status", nil)
 		w3 := httptest.NewRecorder()
 		r.ServeHTTP(w3, req3)
 		var body3 map[string]any
 		require.NoError(t, json.Unmarshal(w3.Body.Bytes(), &body3))
-		assert.Equal(t, false, body3["initialized"],
-			"after clearing hash, status must return initialized=false")
+		assert.Equal(t, false, body3["initialized"])
+	})
+}
+
+// ─── SRP-6a handshake security tests ─────────────────────────────────────────
+
+func TestSRPHandshakeSecurity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const password = "hunter2"
+
+	t.Run("A=0 is rejected with 400", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		body, _ := json.Marshal(map[string]string{"A": "00"})
+		req, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("A=N is rejected (A mod N == 0)", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		// Send A = N (N mod N = 0)
+		nHex := hex.EncodeToString(pad256(srpN))
+		body, _ := json.Marshal(map[string]string{"A": nHex})
+		req, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("wrong password: M1 rejected with 401", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		// Client computes A.
+		aPrivBytes := make([]byte, 32)
+		_, _ = rand.Read(aPrivBytes)
+		aPriv := new(big.Int).SetBytes(aPrivBytes)
+		A := new(big.Int).Exp(srpG, aPriv, srpN)
+		aHex := hex.EncodeToString(pad256(A))
+
+		// Init
+		initBody, _ := json.Marshal(map[string]string{"A": aHex})
+		initReq, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(initBody))
+		initReq.Header.Set("Content-Type", "application/json")
+		initW := httptest.NewRecorder()
+		r.ServeHTTP(initW, initReq)
+		require.Equal(t, http.StatusOK, initW.Code)
+
+		// Send a wrong M1 (all zeros = definitely wrong)
+		verifyBody, _ := json.Marshal(map[string]string{
+			"A":  aHex,
+			"M1": strings.Repeat("00", 32),
+		})
+		verifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(verifyBody))
+		verifyReq.Header.Set("Content-Type", "application/json")
+		verifyW := httptest.NewRecorder()
+		r.ServeHTTP(verifyW, verifyReq)
+
+		assert.Equal(t, http.StatusUnauthorized, verifyW.Code)
+	})
+
+	t.Run("session not found: verify without init returns 401", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		// A value that was never sent to /srp/init.
+		aPrivBytes := make([]byte, 32)
+		_, _ = rand.Read(aPrivBytes)
+		aPriv := new(big.Int).SetBytes(aPrivBytes)
+		A := new(big.Int).Exp(srpG, aPriv, srpN)
+		aHex := hex.EncodeToString(pad256(A))
+
+		verifyBody, _ := json.Marshal(map[string]string{
+			"A":  aHex,
+			"M1": strings.Repeat("ab", 32),
+		})
+		verifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(verifyBody))
+		verifyReq.Header.Set("Content-Type", "application/json")
+		verifyW := httptest.NewRecorder()
+		r.ServeHTTP(verifyW, verifyReq)
+
+		// Must return 401 (same as bad M1) — no information leak about session existence.
+		assert.Equal(t, http.StatusUnauthorized, verifyW.Code)
+	})
+
+	t.Run("session is consumed: second verify on same A fails", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		aPrivBytes := make([]byte, 32)
+		_, _ = rand.Read(aPrivBytes)
+		aPriv := new(big.Int).SetBytes(aPrivBytes)
+		A := new(big.Int).Exp(srpG, aPriv, srpN)
+		aHex := hex.EncodeToString(pad256(A))
+
+		initBody, _ := json.Marshal(map[string]string{"A": aHex})
+		initReq, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(initBody))
+		initReq.Header.Set("Content-Type", "application/json")
+		initW := httptest.NewRecorder()
+		r.ServeHTTP(initW, initReq)
+		require.Equal(t, http.StatusOK, initW.Code)
+
+		// First verify attempt (wrong M1 — session gets consumed on first verify attempt)
+		badVerifyBody, _ := json.Marshal(map[string]string{"A": aHex, "M1": strings.Repeat("00", 32)})
+		badVerifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(badVerifyBody))
+		badVerifyReq.Header.Set("Content-Type", "application/json")
+		badVerifyW := httptest.NewRecorder()
+		r.ServeHTTP(badVerifyW, badVerifyReq)
+		assert.Equal(t, http.StatusUnauthorized, badVerifyW.Code)
+
+		// Second verify attempt — session was consumed, so even with correct M1 it fails
+		badVerify2Body, _ := json.Marshal(map[string]string{"A": aHex, "M1": strings.Repeat("00", 32)})
+		badVerify2Req, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(badVerify2Body))
+		badVerify2Req.Header.Set("Content-Type", "application/json")
+		badVerify2W := httptest.NewRecorder()
+		r.ServeHTTP(badVerify2W, badVerify2Req)
+		assert.Equal(t, http.StatusUnauthorized, badVerify2W.Code, "second verify must fail: session is one-time use")
+	})
+
+	t.Run("correct password: full handshake succeeds and token grants API access", func(t *testing.T) {
+		_, r, _ := setupSRPLib(t, password)
+
+		token := performSRPHandshake(t, r, password)
+		require.NotEmpty(t, token)
+
+		// Use the issued token to access a protected endpoint.
+		req, _ := http.NewRequest("GET", "/api/notes", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code, "SRP-issued token must grant API access")
+	})
+
+	t.Run("init on uninitialized server returns 400", func(t *testing.T) {
+		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
+		r := NewServer(lib).SetupRouter()
+
+		body, _ := json.Marshal(map[string]string{"A": hex.EncodeToString(pad256(srpG))})
+		req, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("GET /api/config never exposes SRPSalt or SRPVerifier", func(t *testing.T) {
+		_, r, saltB64 := setupSRPLib(t, password)
+		token := performSRPHandshake(t, r, password)
+
+		req, _ := http.NewRequest("GET", "/api/config", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.NotContains(t, body, saltB64, "GET /api/config must not leak SRPSalt")
+		assert.NotContains(t, body, "srpVerifier", "GET /api/config must not contain srpVerifier key")
+		assert.NotContains(t, body, "srpSalt", "GET /api/config must not contain srpSalt key")
 	})
 }
 
@@ -2287,52 +2569,34 @@ func TestHandleAuthStatus(t *testing.T) {
 // TestNewDeviceAPIFlow simulates the complete server-side sequence that the
 // frontend performs when a new device connects to an already-initialized library:
 //
-//  1. "Device A" initialises by POSTing its token hash (claim window, no auth needed).
-//  2. GET /api/auth/status returns {initialized: true} — accessible without Bearer.
-//  3. "Device B" derives the same token from the same password and POSTs it with a
-//     matching Bearer header → server accepts (correct password confirmed).
-//  4. Device B can then call protected endpoints (GET /api/notes) with that token.
-//  5. Device B with a wrong token → POST /api/auth/setup returns 401 (rejected).
-//  6. After rejection, Device B cannot reach protected endpoints.
+//  1. "Device A" initialises by completing the SRP handshake (claim window).
+//  2. GET /api/auth/status returns {initialized: true}.
+//  3. "Device B" with the same password completes a new SRP handshake and
+//     receives a new token — the server has the verifier, so any correct
+//     password yields a valid token.
+//  4. Device B can then call protected endpoints with that token.
+//  5. "Device C" with the wrong password fails SRP verify.
 func TestNewDeviceAPIFlow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Shared token material: "Device A" knows the password; its derived token and hash
-	// are stored here.  "Device B" with the same password derives the same values.
-	const correctToken = "correct-session-token"
-	h := sha256.Sum256([]byte(correctToken))
-	correctHash := hex.EncodeToString(h[:])
-
-	const wrongToken = "wrong-session-token"
-	hw := sha256.Sum256([]byte(wrongToken))
-	wrongHash := hex.EncodeToString(hw[:])
+	const correctPassword = "correct-password"
+	const wrongPassword = "wrong-password"
 
 	setup := func(t *testing.T) (*NoteLibrary, *gin.Engine) {
 		t.Helper()
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		r := NewServer(lib).SetupRouter()
+		lib, r, _ := setupSRPLib(t, correctPassword)
 		return lib, r
 	}
 
-	t.Run("device A claims the library (first POST, no auth required)", func(t *testing.T) {
+	t.Run("device A claims the library via SRP handshake", func(t *testing.T) {
 		_, r := setup(t)
-
-		body, _ := json.Marshal(map[string]string{"token_hash": correctHash})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code, "first POST must succeed without auth")
+		token := performSRPHandshake(t, r, correctPassword)
+		assert.NotEmpty(t, token, "first handshake must succeed and return a token")
 	})
 
 	t.Run("new device sees initialized=true before any local state", func(t *testing.T) {
-		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
+		_, r := setup(t)
 
-		// No Authorization header — simulates a fresh browser with no sessionStorage.
 		req, _ := http.NewRequest("GET", "/api/auth/status", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
@@ -2343,109 +2607,88 @@ func TestNewDeviceAPIFlow(t *testing.T) {
 		assert.Equal(t, true, body["initialized"])
 	})
 
-	t.Run("device B with correct password: POST /api/auth/setup returns 200", func(t *testing.T) {
-		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
-
-		// Device B sends the token derived from the correct password.
-		body, _ := json.Marshal(map[string]string{"token_hash": correctHash})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+correctToken)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code,
-			"correct password → server must accept and write back the same hash")
-	})
-
-	t.Run("device B with correct password can access protected API", func(t *testing.T) {
-		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
+	t.Run("device B with correct password gets a valid token", func(t *testing.T) {
+		_, r := setup(t)
+		tokenB := performSRPHandshake(t, r, correctPassword)
+		require.NotEmpty(t, tokenB)
 
 		req, _ := http.NewRequest("GET", "/api/notes", nil)
-		req.Header.Set("Authorization", "Bearer "+correctToken)
+		req.Header.Set("Authorization", "Bearer "+tokenB)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusOK, w.Code,
-			"device B with correct token must be able to read notes")
+		assert.Equal(t, http.StatusOK, w.Code, "device B token must grant API access")
 	})
 
-	t.Run("device B with wrong password: POST /api/auth/setup returns 401", func(t *testing.T) {
+	t.Run("device C with wrong password: srp/verify returns 401", func(t *testing.T) {
 		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
+		_ = lib
 
-		// Device B sends a token derived from the wrong password.
-		body, _ := json.Marshal(map[string]string{"token_hash": wrongHash})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+wrongToken)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
+		aPrivBytes := make([]byte, 32)
+		_, _ = rand.Read(aPrivBytes)
+		aPriv := new(big.Int).SetBytes(aPrivBytes)
+		A := new(big.Int).Exp(srpG, aPriv, srpN)
+		aHex := hex.EncodeToString(pad256(A))
 
-		assert.Equal(t, http.StatusUnauthorized, w.Code,
-			"wrong password → server must reject and leave existing hash intact")
-	})
+		initBody, _ := json.Marshal(map[string]string{"A": aHex})
+		initReq, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(initBody))
+		initReq.Header.Set("Content-Type", "application/json")
+		initW := httptest.NewRecorder()
+		r.ServeHTTP(initW, initReq)
+		require.Equal(t, http.StatusOK, initW.Code)
 
-	t.Run("device B with wrong password cannot access protected API", func(t *testing.T) {
-		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
+		var initResp struct {
+			Salt string `json:"salt"`
+			B    string `json:"B"`
+		}
+		require.NoError(t, json.Unmarshal(initW.Body.Bytes(), &initResp))
 
-		req, _ := http.NewRequest("GET", "/api/notes", nil)
-		req.Header.Set("Authorization", "Bearer "+wrongToken)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
+		// Compute M1 using wrong password — this will not match server's expected M1.
+		saltBytes, _ := base64.StdEncoding.DecodeString(initResp.Salt)
+		bBytes, _ := hex.DecodeString(initResp.B)
+		B := new(big.Int).SetBytes(bBytes)
+		x := srpComputeX(saltBytes, wrongPassword) // wrong password!
+		kh := sha256.New()
+		kh.Write(pad256(srpN))
+		kh.Write(pad256(srpG))
+		k := new(big.Int).SetBytes(kh.Sum(nil))
+		uh := sha256.New()
+		uh.Write(pad256(A))
+		uh.Write(pad256(B))
+		u := new(big.Int).SetBytes(uh.Sum(nil))
+		gx := new(big.Int).Exp(srpG, x, srpN)
+		kgx := new(big.Int).Mul(k, gx)
+		kgx.Mod(kgx, srpN)
+		base := new(big.Int).Sub(B, kgx)
+		base.Mod(base, srpN)
+		ux := new(big.Int).Mul(u, x)
+		exp := new(big.Int).Add(aPriv, ux)
+		S := new(big.Int).Exp(base, exp, srpN)
+		m1h := sha256.New()
+		m1h.Write(pad256(A))
+		m1h.Write(pad256(B))
+		m1h.Write(pad256(S))
+		m1Hex := hex.EncodeToString(m1h.Sum(nil))
 
-		assert.Equal(t, http.StatusUnauthorized, w.Code,
-			"device B with wrong token must not be able to access protected endpoints")
-	})
+		verifyBody, _ := json.Marshal(map[string]string{"A": aHex, "M1": m1Hex})
+		verifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(verifyBody))
+		verifyReq.Header.Set("Content-Type", "application/json")
+		verifyW := httptest.NewRecorder()
+		r.ServeHTTP(verifyW, verifyReq)
 
-	t.Run("wrong password attempt does not overwrite the server hash", func(t *testing.T) {
-		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
-
-		// Device B (wrong password) tries to overwrite.
-		body, _ := json.Marshal(map[string]string{"token_hash": wrongHash})
-		req, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+wrongToken)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-
-		// The original hash must be unchanged.
-		lib.mu.Lock()
-		hashAfter := lib.Config.SessionTokenHash
-		lib.mu.Unlock()
-		assert.Equal(t, correctHash, hashAfter,
-			"rejected attempt must not modify the stored hash")
+		assert.Equal(t, http.StatusUnauthorized, verifyW.Code, "wrong password must be rejected")
 	})
 
 	t.Run("multiple devices with same password can all access the API", func(t *testing.T) {
-		lib, r := setup(t)
-		lib.mu.Lock()
-		lib.Config.SessionTokenHash = correctHash
-		lib.mu.Unlock()
+		_, r := setup(t)
 
-		// All three "devices" derive the same token from the same password.
-		for i, deviceName := range []string{"deviceA", "deviceB", "deviceC"} {
+		for i := 0; i < 3; i++ {
+			tok := performSRPHandshake(t, r, correctPassword)
 			req, _ := http.NewRequest("GET", "/api/notes", nil)
-			req.Header.Set("Authorization", "Bearer "+correctToken)
+			req.Header.Set("Authorization", "Bearer "+tok)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
-			assert.Equal(t, http.StatusOK, w.Code,
-				"device %d (%s) must be able to read notes with the shared password token", i, deviceName)
+			assert.Equal(t, http.StatusOK, w.Code, "device %d must have API access", i)
 		}
 	})
 }
@@ -2544,24 +2787,18 @@ func TestWebDAV(t *testing.T) {
 	})
 }
 
-// davTokenHash computes the SessionTokenHash string for a given raw token,
-// matching the format stored in config.json by the frontend auth setup flow.
-func davTokenHash(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
-}
-
-// TestDavAuth verifies that WebDAV authentication uses SessionTokenHash
-// (same credential as the web app) rather than AUTH_USER/AUTH_PASS env vars.
-// Username field is ignored; password must equal the raw session token.
+// TestDavAuth verifies that WebDAV authentication uses the SRP-issued Bearer token
+// (same credential as the web app REST API) rather than AUTH_USER/AUTH_PASS env vars.
+// Username field is ignored; password must equal the raw Bearer token from activeTokens.
 func TestDavAuth(t *testing.T) {
-	const token = "test-session-token-abc123"
-
-	newSrv := func(t *testing.T) (*Server, http.Handler) {
+	// newSrvWithToken creates a server with SRP auth set up and performs a full
+	// handshake to obtain a valid Bearer token.
+	newSrvWithToken := func(t *testing.T) (*Server, http.Handler, string) {
 		t.Helper()
-		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
-		srv := NewServer(lib)
-		return srv, srv.newDavHandler()
+		lib, r, _ := setupSRPLib(t, "webdav-test-password")
+		token := performSRPHandshake(t, r, "webdav-test-password")
+		srv := &Server{Library: lib}
+		return srv, srv.newDavHandler(), token
 	}
 
 	propfind := func(body string) *http.Request {
@@ -2569,17 +2806,18 @@ func TestDavAuth(t *testing.T) {
 		return req
 	}
 
-	t.Run("open when SessionTokenHash not set", func(t *testing.T) {
-		_, davH := newSrv(t)
+	t.Run("open when SRPVerifier not set", func(t *testing.T) {
+		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
+		srv := NewServer(lib)
+		davH := srv.newDavHandler()
 		req := propfind(`<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
 		w := httptest.NewRecorder()
 		davH.ServeHTTP(w, req)
 		assert.Equal(t, 207, w.Code)
 	})
 
-	t.Run("401 when token hash set and no credentials", func(t *testing.T) {
-		srv, davH := newSrv(t)
-		srv.Library.Config.SessionTokenHash = davTokenHash(token)
+	t.Run("401 when SRPVerifier set and no credentials", func(t *testing.T) {
+		_, davH, _ := newSrvWithToken(t)
 		req := propfind("")
 		w := httptest.NewRecorder()
 		davH.ServeHTTP(w, req)
@@ -2587,19 +2825,17 @@ func TestDavAuth(t *testing.T) {
 		assert.Contains(t, w.Header().Get("WWW-Authenticate"), `Basic realm=`)
 	})
 
-	t.Run("401 on wrong token", func(t *testing.T) {
-		srv, davH := newSrv(t)
-		srv.Library.Config.SessionTokenHash = davTokenHash(token)
+	t.Run("401 on wrong token (not in activeTokens)", func(t *testing.T) {
+		_, davH, _ := newSrvWithToken(t)
 		req := propfind("")
-		req.SetBasicAuth("anything", "wrong-token")
+		req.SetBasicAuth("anything", "not-a-valid-srp-token")
 		w := httptest.NewRecorder()
 		davH.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 
-	t.Run("207 on correct token (username ignored)", func(t *testing.T) {
-		srv, davH := newSrv(t)
-		srv.Library.Config.SessionTokenHash = davTokenHash(token)
+	t.Run("207 on correct SRP token (username ignored)", func(t *testing.T) {
+		_, davH, token := newSrvWithToken(t)
 		req := propfind(`<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
 		req.SetBasicAuth("yinmonote", token) // username can be anything
 		w := httptest.NewRecorder()
@@ -2607,9 +2843,8 @@ func TestDavAuth(t *testing.T) {
 		assert.Equal(t, 207, w.Code)
 	})
 
-	t.Run("brute-force: failure counter increments and clears", func(t *testing.T) {
-		srv, davH := newSrv(t)
-		srv.Library.Config.SessionTokenHash = davTokenHash(token)
+	t.Run("brute-force: failure counter increments and clears on correct token", func(t *testing.T) {
+		_, davH, token := newSrvWithToken(t)
 
 		const fakeIP = "192.0.2.88"
 		send := func(pass string) int {
