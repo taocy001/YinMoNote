@@ -59,8 +59,12 @@ type AppConfig struct {
 	// MCPTokenHash is the SHA-256 hex hash of the MCP-specific bearer token.
 	// Kept separate from SRP auth so the two access paths are independently revocable.
 	// Never returned to clients via GET /api/config.
-	MCPTokenHash string    `json:"mcpTokenHash,omitempty"`
-	MCPPolicy    MCPPolicy `json:"mcpPolicy"`
+	MCPTokenHash string `json:"mcpTokenHash,omitempty"`
+	// WebDAVTokenHash is the SHA-256 hex hash of the WebDAV-specific bearer token.
+	// Persisted in config.json so it survives service restarts — unlike session tokens
+	// which are in-memory only. Never returned to clients via GET /api/config.
+	WebDAVTokenHash string    `json:"webdavTokenHash,omitempty"`
+	MCPPolicy       MCPPolicy `json:"mcpPolicy"`
 }
 
 // DefaultConfig returns conservative quota defaults for a single-user personal library.

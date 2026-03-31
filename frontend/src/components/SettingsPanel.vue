@@ -110,15 +110,25 @@
                     <span class="ts-xs shrink-0" style="color: var(--text-muted); width: 4.5rem;">Username</span>
                     <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg" style="background: var(--bg-hover); color: var(--text-primary);">yinmonote</code>
                   </div>
+                </div>
+                <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.webdavToken }}</span>
+                <!-- Token shown once after generation -->
+                <template v-if="webdavTokenValue">
+                  <div class="px-3 py-2 rounded-lg ts-xs leading-snug" style="background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.3); color: var(--color-success);">{{ t.webdavTokenWarning }}</div>
                   <div class="flex items-center gap-2">
-                    <span class="ts-xs shrink-0" style="color: var(--text-muted); width: 4.5rem;">Password</span>
-                    <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg" style="background: var(--bg-hover); color: var(--text-muted);">••••••••••••••••</code>
-                    <button @click="copyDavPassword" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);">
-                      {{ davPasswordCopied ? t.webdavCopied : t.webdavCopyPassword }}
+                    <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg truncate" style="background: var(--bg-hover); color: var(--text-primary);">{{ webdavTokenValue }}</code>
+                    <button @click="copyWebDAVToken" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);">
+                      {{ webdavTokenCopied ? t.webdavTokenCopied : 'Copy' }}
                     </button>
                   </div>
-                  <p v-if="davCopyError" class="ts-xs font-medium" style="color: var(--color-danger);">{{ t.copyFailed }}</p>
+                </template>
+                <p v-else-if="!webdavTokenSet" class="ts-xs" style="color: var(--text-muted);">{{ t.webdavTokenNone }}</p>
+                <p v-else class="ts-xs" style="color: var(--text-muted);">••••••••••••••••</p>
+                <div class="flex gap-2 pt-1">
+                  <button @click="emit('webdav-generate-token')" :disabled="webdavTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);">{{ t.webdavTokenGenerate }}</button>
+                  <button v-if="webdavTokenSet || webdavTokenValue" @click="emit('webdav-revoke-token')" :disabled="webdavTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: rgba(239,68,68,0.08); color: var(--color-danger); border: 1px solid rgba(239,68,68,0.2);">{{ t.webdavTokenRevoke }}</button>
                 </div>
+                <p v-if="webdavTokenError" class="ts-xs pt-1" style="color: var(--color-danger);">{{ webdavTokenError === 'generate_failed' ? t.webdavTokenGenerateFailed : t.webdavTokenRevokeFailed }}</p>
               </div>
               <!-- Change password (password mode only) -->
               <div v-if="!resetIsHardware && !isKeylessModeActive" class="px-4 py-3 rounded-xl space-y-3" style="background: var(--bg-app); border: 1px solid var(--border);">
@@ -342,7 +352,6 @@ sudo update-ca-certificates</pre>
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import ToggleSwitch from './ToggleSwitch.vue'
-import { getSessionToken } from '../crypto'
 
 export interface MCPDraftRule {
   condition: string  // 'tag' | 'note_id' | 'title_glob' | 'subtree_of'
@@ -383,6 +392,10 @@ const props = defineProps<{
   mcpTokenError?: string
   mcpCaFingerprint?: string
   mcpCaExpiry?: string
+  webdavTokenValue?: string
+  webdavTokenSet: boolean
+  webdavTokenLoading?: boolean
+  webdavTokenError?: string
 }>()
 
 const emit = defineEmits<{
@@ -393,6 +406,8 @@ const emit = defineEmits<{
   'export-key': []
   'mcp-generate-token': []
   'mcp-revoke-token': []
+  'webdav-generate-token': []
+  'webdav-revoke-token': []
   'update:draftSettings': [value: DraftSettings]
   'update:showSettingsCloseConfirm': [value: boolean]
   'update:settingsTab': [value: 'appearance' | 'editor' | 'security' | 'ai']
@@ -434,37 +449,25 @@ defineExpose({ onPasswordChangeResult })
 const tokenCopied = ref(false)
 let tokenCopiedTimer: ReturnType<typeof setTimeout> | null = null
 
-const davPasswordCopied = ref(false)
-const davCopyError = ref(false)
-let davSuccessTimer: ReturnType<typeof setTimeout> | null = null
-let davErrorTimer: ReturnType<typeof setTimeout> | null = null
+const webdavTokenCopied = ref(false)
+let webdavTokenCopiedTimer: ReturnType<typeof setTimeout> | null = null
 
 const mcpBaseUrl = computed(() => window.location.origin)
 const mcpEndpointUrl = computed(() => `${window.location.origin}/mcp/sse`)
 
 onUnmounted(() => {
   if (tokenCopiedTimer !== null) { clearTimeout(tokenCopiedTimer); tokenCopiedTimer = null }
-  if (davSuccessTimer !== null) { clearTimeout(davSuccessTimer); davSuccessTimer = null }
-  if (davErrorTimer !== null) { clearTimeout(davErrorTimer); davErrorTimer = null }
+  if (webdavTokenCopiedTimer !== null) { clearTimeout(webdavTokenCopiedTimer); webdavTokenCopiedTimer = null }
 })
 
-function copyDavPassword() {
-  const token = getSessionToken()
-  if (!token) {
-    davCopyError.value = true
-    if (davErrorTimer !== null) clearTimeout(davErrorTimer)
-    davErrorTimer = setTimeout(() => { davCopyError.value = false; davErrorTimer = null }, 3000)
-    return
-  }
-  navigator.clipboard.writeText(token).then(() => {
-    davPasswordCopied.value = true
-    davCopyError.value = false
-    if (davSuccessTimer !== null) clearTimeout(davSuccessTimer)
-    davSuccessTimer = setTimeout(() => { davPasswordCopied.value = false; davSuccessTimer = null }, 2000)
+function copyWebDAVToken() {
+  if (!props.webdavTokenValue) return
+  navigator.clipboard.writeText(props.webdavTokenValue).then(() => {
+    webdavTokenCopied.value = true
+    if (webdavTokenCopiedTimer !== null) clearTimeout(webdavTokenCopiedTimer)
+    webdavTokenCopiedTimer = setTimeout(() => { webdavTokenCopied.value = false; webdavTokenCopiedTimer = null }, 2000)
   }).catch(() => {
-    davCopyError.value = true
-    if (davErrorTimer !== null) clearTimeout(davErrorTimer)
-    davErrorTimer = setTimeout(() => { davCopyError.value = false; davErrorTimer = null }, 3000)
+    console.error('[YinMo] Failed to copy WebDAV token to clipboard')
   })
 }
 
