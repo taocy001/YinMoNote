@@ -876,32 +876,21 @@ const handleUnlock = async () => {
     const isNewDeviceUnlock = serverInitialized.value && !crypto.hasLibrary()
 
     if (isNewDeviceUnlock) {
-      // Verify the key against the server before writing anything locally.
-      // Derive a session token from the password (password mode) or the hardware
-      // credential ID (device mode), then POST it. The server checks
-      // sha256(Bearer) == stored SessionTokenHash.
+      // New device connecting to an already-initialized library.
+      // Perform SRP handshake to prove password knowledge; if it succeeds,
+      // the server issues a Bearer token which confirms the password is correct.
       const tokenInput = unlockMode.value === 'device'
         ? (crypto.getHardwareCredentialId() ?? '')
         : unlockPassword.value
       if (!tokenInput) throw new Error('Invalid')
-      const token = await crypto.deriveSessionToken(tokenInput)
-      const tokenHash = await crypto.hashToken(token)
       try {
-        // Verify the password against the server before writing anything locally.
-        // Pass the token directly in the Authorization header (not via the
-        // sessionStorage interceptor — nothing is stored until verification succeeds).
-        await axios.post(
-          `${API_BASE}/auth/setup`,
-          { token_hash: tokenHash },
-          { headers: { Authorization: `Bearer ${token}` } },
-        )
-        // Password confirmed — persist the token so subsequent requests carry it.
+        const token = await crypto.deriveSessionToken(tokenInput, API_BASE)
+        // SRP handshake succeeded — password confirmed. Persist token and init library.
         crypto.storeSessionToken(token)
       } catch {
         crypto.lockLibrary()   // clears _key and any partial session state
         throw new Error('Invalid')
       }
-      // Password confirmed correct — register this device's local verification token.
       await crypto.initLibrary(key)
       hasLibraryKey.value = true
       serverInitialized.value = false
@@ -910,16 +899,14 @@ const handleUnlock = async () => {
       // Import mode: clear any stale hardware credential only after init succeeds.
       if (unlockMode.value === 'import') { crypto.clearHardwareKey(); resetIsHardware.value = false }
     } else if (!await crypto.verifyAndUnlockLibrary(key)) {
-      // Local verification failed. If the server has a session token, verify
-      // the password against the server — if it passes, the local LIBRARY_KEY_STORE
+      // Local verification failed. If the server has SRP configured, prove the
+      // password via SRP handshake — if it passes, the local LIBRARY_KEY_STORE
       // was created with a stale salt. Re-init with the correct key.
       if (serverInitialized.value || (unlockMode.value === 'password' && unlockPassword.value)) {
         try {
           const tokenInput = unlockMode.value === 'device'
             ? (crypto.getHardwareCredentialId() ?? '') : unlockPassword.value
-          const token = await crypto.deriveSessionToken(tokenInput)
-          await axios.post(`${API_BASE}/auth/setup`, { token_hash: await crypto.hashToken(token) },
-            { headers: { Authorization: `Bearer ${token}` } })
+          const token = await crypto.deriveSessionToken(tokenInput, API_BASE)
           crypto.storeSessionToken(token)
           await crypto.initLibrary(key)
           hasLibraryKey.value = true
@@ -937,25 +924,34 @@ const handleUnlock = async () => {
       // SEC-018: migrate legacy fixed-salt users to per-user random salt after successful unlock.
       await crypto.migrateLegacySaltIfNeeded(unlockPassword.value)
     }
-    // Derive and register a server-side session token BEFORE unlocking the UI.
+    // Obtain a server-side Bearer token via SRP BEFORE unlocking the UI.
     // If this runs after isLibraryLocked=false, Vue flushes the DOM during the
-    // deriveSessionToken await and the Editor mounts (currentNote is still set
-    // from before the lock) — it fires loadNote() with no Bearer token → 401.
+    // SRP handshake and the Editor mounts with no Bearer token → 401.
     // Skip for: keyless (handled above), import mode (no password), and new-device
-    // unlock (already derived and POSTed the token above).
+    // unlock (already obtained a token above).
     if (!isNewDeviceUnlock && (unlockMode.value === 'password' || unlockMode.value === 'device')) {
       try {
         const tokenInput = unlockMode.value === 'password'
           ? unlockPassword.value
           : (crypto.getHardwareCredentialId() ?? '')
         if (tokenInput) {
-          const token = await crypto.deriveSessionToken(tokenInput)
-          const tokenHash = await crypto.hashToken(token)
+          if (!serverInitialized.value) {
+            // First-time password setup: register SRP verifier with the server.
+            // After this, subsequent logins use SRP handshake only (no re-setup needed).
+            const srpSaltBytes = window.crypto.getRandomValues(new Uint8Array(16))
+            const srpSaltB64 = btoa(String.fromCharCode(...srpSaltBytes))
+            const verifierHex = await crypto.srpComputeVerifier(srpSaltBytes, tokenInput)
+            await axios.post(`${API_BASE}/auth/setup`, {
+              srpSalt: srpSaltB64,
+              srpVerifier: verifierHex,
+            })
+            serverInitialized.value = true
+          }
+          const token = await crypto.deriveSessionToken(tokenInput, API_BASE)
           crypto.storeSessionToken(token)
-          await axios.post(`${API_BASE}/auth/setup`, { token_hash: tokenHash })
         }
       } catch (_) {
-        // Non-fatal: server may be in open mode or auth setup may not be supported.
+        // Non-fatal: server may be in open/keyless mode.
       }
     }
 
@@ -1055,12 +1051,12 @@ const handleResetLibrary = async () => {
       if (!await crypto.verifyAndUnlockLibrary(key)) { resetError.value = true; resetExecuting.value = false; return }
     }
     await deleteAllServerData()
-    // Clear server-side SessionTokenHash so /api/auth/status returns
+    // Clear server-side SRPVerifier so /api/auth/status returns
     // initialized=false after reload, showing the init wizard instead of
     // the password-unlock UI.
     const token = crypto.getSessionToken()
     if (token) {
-      await axios.post(`${API_BASE}/auth/setup`, { token_hash: '' }, {
+      await axios.post(`${API_BASE}/auth/setup`, { srpSalt: '', srpVerifier: '' }, {
         headers: { 'Authorization': `Bearer ${token}` },
       }).catch(() => {})
     }
@@ -1346,12 +1342,20 @@ const handleChangePassword = async (currentPwd: string, newPwd: string) => {
     const newKey = await crypto.deriveKeyFromPassword(newPwd)
     // Step 3: re-init library token with new key
     await crypto.initLibrary(newKey)
-    // Step 4: update session token on server
+    // Step 4: update SRP verifier on server with new password, then obtain a fresh token.
     try {
-      const token = await crypto.deriveSessionToken(newPwd)
-      const tokenHash = await crypto.hashToken(token)
-      crypto.storeSessionToken(token)
-      await axios.post(`${API_BASE}/auth/setup`, { token_hash: tokenHash })
+      // Generate new SRP salt and verifier for the new password.
+      const newSRPSaltBytes = window.crypto.getRandomValues(new Uint8Array(16))
+      const newSRPSaltB64 = btoa(String.fromCharCode(...newSRPSaltBytes))
+      const newVerifierHex = await crypto.srpComputeVerifier(newSRPSaltBytes, newPwd)
+      // POST /api/auth/setup requires current Bearer token (already in sessionStorage).
+      await axios.post(`${API_BASE}/auth/setup`, {
+        srpSalt: newSRPSaltB64,
+        srpVerifier: newVerifierHex,
+      })
+      // Now authenticate with the new password via SRP to get a fresh token.
+      const newToken = await crypto.deriveSessionToken(newPwd, API_BASE)
+      crypto.storeSessionToken(newToken)
     } catch { /* non-fatal */ }
     settingsPanelRef.value?.onPasswordChangeResult(true, t.value.passwordChangeSuccess as string)
     // Step 5: trigger batch re-encryption if server encryption is enabled
@@ -1479,7 +1483,7 @@ onMounted(async () => {
       // Theme: prefer themeMode, fallback to legacy isDark for migration
       if (cfg.themeMode) { themeMode.value = cfg.themeMode; localStorage.setItem('themeMode', cfg.themeMode) }
       else if (cfg.isDark !== undefined) { themeMode.value = cfg.isDark ? 'dark' : 'light'; localStorage.setItem('themeMode', themeMode.value) }
-      // Salt is fetched separately from the public /auth/salt endpoint (below)
+      // pbkdf2Salt is synced via /api/auth/status on lock screen (see onMounted)
       if (cfg.fontSize) fontSize.value = cfg.fontSize
       if (cfg.editorWidth) editorWidth.value = cfg.editorWidth
       if (cfg.typewriterMode !== undefined) typewriterMode.value = cfg.typewriterMode
@@ -1518,20 +1522,17 @@ onMounted(async () => {
         // ensure all devices derive the same key from the same password. Must
         // happen BEFORE any key derivation, regardless of local library state.
         try {
-          const saltRes = await axios.get(`${API_BASE}/auth/salt`)
-          if (saltRes.data.pbkdf2Salt) crypto.importSaltFromConfig(saltRes.data.pbkdf2Salt)
+          // GET /api/auth/status is unauthenticated; it returns both the
+          // initialized flag and pbkdf2Salt so new devices can import the
+          // salt before key derivation without requiring a Bearer token.
+          const statusRes = await axios.get(`${API_BASE}/auth/status`)
+          if (statusRes.data.pbkdf2Salt) crypto.importSaltFromConfig(statusRes.data.pbkdf2Salt)
+          if (!crypto.hasLibrary() && statusRes.data.initialized) {
+            serverInitialized.value = true
+            unlockMode.value = 'password'
+            hasLibraryKey.value = true   // show UNLOCK UI, not INIT wizard
+          }
         } catch {}
-
-        if (!crypto.hasLibrary()) {
-          try {
-            const statusRes = await axios.get(`${API_BASE}/auth/status`)
-            if (statusRes.data.initialized) {
-              serverInitialized.value = true
-              unlockMode.value = 'password'
-              hasLibraryKey.value = true   // show UNLOCK UI, not INIT wizard
-            }
-          } catch {}
-        }
         showUnlockModal.value = true
       }
     } catch(e) {

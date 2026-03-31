@@ -963,14 +963,21 @@ func (s *Server) apiAuth() gin.HandlerFunc {
 	}
 }
 
-// handleAuthStatus returns whether the server has a password configured.
+// handleAuthStatus returns whether the server has a password configured,
+// and the pbkdf2Salt for cross-device key derivation.
 // Unauthenticated — used by new devices to decide whether to show the
 // "enter password" flow instead of the "initialize library" (first-time) flow.
+// pbkdf2Salt is returned here (not via GET /api/config) so new devices can
+// import it before performing key derivation, without needing a Bearer token.
 func (s *Server) handleAuthStatus(c *gin.Context) {
 	s.Library.mu.Lock()
 	initialized := s.Library.Config.SRPVerifier != ""
+	pbkdf2Salt := s.Library.Config.Pbkdf2Salt
 	s.Library.mu.Unlock()
-	c.JSON(http.StatusOK, gin.H{"initialized": initialized})
+	c.JSON(http.StatusOK, gin.H{
+		"initialized": initialized,
+		"pbkdf2Salt":  pbkdf2Salt,
+	})
 }
 
 // handleAuthSetup stores the SRP verifier and salt for a new password, or

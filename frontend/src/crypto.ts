@@ -606,40 +606,241 @@ export async function decryptObject(cipherText: string): Promise<any> {
   }
 }
 
-// ─── Session token (server-side auth) ─────────────────────────────────────────
+// ─── SRP-6a Client (server-side auth) ─────────────────────────────────────────
+//
+// Implements RFC 5054 / RFC 2945 SRP-6a using the 2048-bit group from RFC 5054
+// Appendix A.  All BigInt arithmetic uses native BigInt + modPow (square-and-multiply).
+// No new npm packages are used.
+//
+// SRP username is fixed: "yinmonote" (same constant as backend srpUsername).
+
+const SRP_USERNAME = 'yinmonote'
+
+// RFC 5054 Appendix A 2048-bit group parameters (N and g=2).
+const SRP_N = BigInt(
+  '0x' +
+  'FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1' +
+  '29024E088A67CC74020BBEA63B139B22514A08798E3404DD' +
+  'EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245' +
+  'E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED' +
+  'EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D' +
+  'C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F' +
+  '83655D23DCA3AD961C62F356208552BB9ED529077096966D' +
+  '670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B' +
+  'E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9' +
+  'DE2BCBF6955817183995497CEA956AE515D2261898FA0510' +
+  '15728E5A8AACAA68FFFFFFFFFFFFFFFF'
+)
+const SRP_G = 2n
 
 /**
- * Derives a server-side session token from a password or credential string.
- *
- * Uses a salt distinct from deriveKeyFromPassword so the two derived values are
- * completely independent — learning the token does not reveal the encryption key.
- * Uses the same iteration count as deriveKeyFromPassword (100,000 in production,
- * overridable via VITE_PBKDF2_ITERATIONS for E2E tests) to ensure consistent
- * brute-force resistance against offline attacks on the stored SHA-256 hash.
- *
- * @param input  The user's password (password mode) or stored credential ID (device mode).
- * @returns      A base64 string suitable for use as a Bearer token.
+ * Modular exponentiation using square-and-multiply algorithm.
+ * Required because BigInt ** n mod m is not available in JS.
  */
-export async function deriveSessionToken(input: string): Promise<string> {
-  const enc = new TextEncoder()
-  const baseKey = await window.crypto.subtle.importKey(
-    'raw', enc.encode(input), 'PBKDF2', false, ['deriveBits']
+function modPow(base: bigint, exp: bigint, mod: bigint): bigint {
+  let result = 1n
+  base = base % mod
+  while (exp > 0n) {
+    if (exp % 2n === 1n) result = result * base % mod
+    exp = exp >> 1n
+    base = base * base % mod
+  }
+  return result
+}
+
+/**
+ * Converts a bigint to a 0x-prefixed hex string padded to exactly 256 bytes
+ * (512 hex characters). Required for SRP hash inputs.
+ */
+function bigIntToHex256(n: bigint): string {
+  return n.toString(16).padStart(512, '0')
+}
+
+/**
+ * Converts a hex string to a Uint8Array.
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+  }
+  return bytes
+}
+
+/**
+ * Converts a Uint8Array to a lowercase hex string.
+ */
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Converts a base64 string to a Uint8Array.
+ */
+function base64ToBytes(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+}
+
+/**
+ * SHA-256 of concatenated byte sequences.
+ */
+async function sha256(...parts: Uint8Array[]): Promise<Uint8Array> {
+  const total = parts.reduce((acc, p) => acc + p.byteLength, 0)
+  const buf = new Uint8Array(total)
+  let off = 0
+  for (const p of parts) { buf.set(p, off); off += p.byteLength }
+  const digest = await window.crypto.subtle.digest('SHA-256', buf)
+  return new Uint8Array(digest)
+}
+
+/**
+ * Generates 32 random bytes and returns them as a BigInt.
+ * Used for the client ephemeral private key a.
+ */
+function randomBigInt256(): bigint {
+  const bytes = window.crypto.getRandomValues(new Uint8Array(32))
+  let n = 0n
+  for (const b of bytes) n = (n << 8n) | BigInt(b)
+  return n
+}
+
+/**
+ * Computes x = SHA256(salt || SHA256("yinmonote:password")).
+ * Matches the server-side srpComputeX implementation.
+ */
+async function srpComputeX(saltBytes: Uint8Array, password: string): Promise<bigint> {
+  const inner = await sha256(new TextEncoder().encode(SRP_USERNAME + ':' + password))
+  const xBytes = await sha256(saltBytes, inner)
+  let x = 0n
+  for (const b of xBytes) x = (x << 8n) | BigInt(b)
+  return x
+}
+
+/**
+ * Computes the SRP verifier v = g^x mod N for use in POST /api/auth/setup.
+ * Returns the verifier as a 512-char hex string.
+ */
+export async function srpComputeVerifier(srpSaltBytes: Uint8Array, password: string): Promise<string> {
+  const x = await srpComputeX(srpSaltBytes, password)
+  const v = modPow(SRP_G, x, SRP_N)
+  return bigIntToHex256(v)
+}
+
+/**
+ * Performs the SRP-6a authentication handshake and returns a Bearer token.
+ *
+ * Flow:
+ *  1. Generate ephemeral key pair (a, A = g^a mod N).
+ *  2. POST /api/auth/srp/init with A → receive B and srpSalt from server.
+ *  3. Compute M1 = SHA256(pad256(A) || pad256(B) || pad256(S)).
+ *  4. POST /api/auth/srp/verify with A + M1 → receive token + M2.
+ *  5. Verify M2 to confirm server knows the verifier.
+ *  6. Store and return the Bearer token.
+ *
+ * @param password  The user's password.
+ * @param apiBase   API base URL (e.g. "/api").
+ * @returns         The Bearer token, or throws on authentication failure.
+ */
+export async function srpAuthenticate(password: string, apiBase: string): Promise<string> {
+  // Step 1: Generate client ephemeral key pair.
+  const a = randomBigInt256()
+  const A = modPow(SRP_G, a, SRP_N)
+  const aHex = bigIntToHex256(A)
+
+  // Step 2: Init handshake.
+  const initRes = await fetch(`${apiBase}/auth/srp/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ A: aHex }),
+  })
+  if (!initRes.ok) throw new Error('srp_init_failed')
+  const { salt: saltB64, B: bHex } = await initRes.json() as { salt: string; B: string }
+
+  const saltBytes = base64ToBytes(saltB64)
+  const BBytes = hexToBytes(bHex)
+  let B = 0n
+  for (const byte of BBytes) B = (B << 8n) | BigInt(byte)
+
+  // Security check: B must not be 0 mod N (analogous to server's A=0 check).
+  // If B = 0 mod N, the session key S = 0 and authentication is insecure.
+  if (B % SRP_N === 0n) throw new Error('srp_invalid_B')
+
+  // Compute k = SHA256(pad256(N) || pad256(g))
+  const kBytes = await sha256(
+    hexToBytes(bigIntToHex256(SRP_N)),
+    hexToBytes(bigIntToHex256(SRP_G)),
   )
-  const salt = enc.encode('yinmo-server-token-v1')
-  // Use the same configurable iteration count as deriveKeyFromPassword so that E2E
-  // builds (VITE_PBKDF2_ITERATIONS=1000) complete in milliseconds, not tens of seconds.
-  const iterations = Number(import.meta.env.VITE_PBKDF2_ITERATIONS) || 100000
-  const bits = await window.crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
-    baseKey,
-    256
+  let k = 0n
+  for (const byte of kBytes) k = (k << 8n) | BigInt(byte)
+
+  // Compute u = SHA256(pad256(A) || pad256(B))
+  const uBytes = await sha256(
+    hexToBytes(bigIntToHex256(A)),
+    hexToBytes(bigIntToHex256(B)),
   )
-  return btoa(bufToString(bits))
+  let u = 0n
+  for (const byte of uBytes) u = (u << 8n) | BigInt(byte)
+
+  // Compute x
+  const x = await srpComputeX(saltBytes, password)
+
+  // Compute S = (B - k*g^x) ^ (a + u*x) mod N
+  const gx = modPow(SRP_G, x, SRP_N)
+  const kgx = (k * gx) % SRP_N
+  const base = ((B - kgx) % SRP_N + SRP_N) % SRP_N
+  const exp = a + u * x
+  const S = modPow(base, exp, SRP_N)
+
+  // Step 3: Compute M1 = SHA256(pad256(A) || pad256(B) || pad256(S))
+  const m1Bytes = await sha256(
+    hexToBytes(bigIntToHex256(A)),
+    hexToBytes(bigIntToHex256(B)),
+    hexToBytes(bigIntToHex256(S)),
+  )
+  const m1Hex = bytesToHex(m1Bytes)
+
+  // Step 4: Verify handshake.
+  const verifyRes = await fetch(`${apiBase}/auth/srp/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ A: aHex, M1: m1Hex }),
+  })
+  if (!verifyRes.ok) throw new Error('srp_verify_failed')
+  const { token, M2: m2Hex } = await verifyRes.json() as { token: string; M2: string }
+
+  // Step 5: Verify M2 = SHA256(pad256(A) || M1_bytes || pad256(S))
+  const expectedM2Bytes = await sha256(
+    hexToBytes(bigIntToHex256(A)),
+    m1Bytes,
+    hexToBytes(bigIntToHex256(S)),
+  )
+  const expectedM2 = bytesToHex(expectedM2Bytes)
+  if (expectedM2 !== m2Hex) throw new Error('srp_m2_mismatch')
+
+  return token
+}
+
+/**
+ * deriveSessionToken is now a thin wrapper around srpAuthenticate.
+ * It performs the full SRP-6a handshake and returns the server-issued Bearer token.
+ * The parameter name "input" is kept for API compatibility — it is the password.
+ *
+ * Note: In device mode (hardware key), the credential ID is passed as input.
+ * For SRP, we use the credential ID as the "password" — this maintains the same
+ * binding: the server verifier was computed from the credential ID string.
+ *
+ * @param input    The user's password (password mode) or hardware credential ID.
+ * @param apiBase  API base URL; defaults to "/api" for production use.
+ * @returns        A Bearer token string.
+ */
+export async function deriveSessionToken(input: string, apiBase = '/api'): Promise<string> {
+  return srpAuthenticate(input, apiBase)
 }
 
 /**
  * Computes the SHA-256 hex digest of a token string.
- * The server stores this hash; the raw token is sent as the Bearer credential.
+ * Retained for API compatibility; no longer used for server auth (SRP replaced it).
+ * May be used for other purposes (e.g. local token hashing) if needed.
  */
 export async function hashToken(token: string): Promise<string> {
   const data = new TextEncoder().encode(token)
