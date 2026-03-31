@@ -301,6 +301,15 @@ func (s *Server) newDavHandler() http.Handler {
 		} else if r.Method == "LOCK" {
 			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		}
+		// RFC 4918 §9.1: servers MAY reject Depth:infinity PROPFIND requests.
+		// An unlimited depth traversal over a large note library can generate a
+		// multi-megabyte response with no server-side bound; we reject it to
+		// prevent authenticated DoS. Depth:0 and Depth:1 are always accepted.
+		if r.Method == "PROPFIND" && r.Header.Get("Depth") == "infinity" {
+			http.Error(w, "Depth: infinity is not supported", http.StatusForbidden)
+			return
+		}
+
 		ip := davClientIP(r)
 
 		s.Library.mu.Lock()
@@ -361,10 +370,18 @@ func davClientIP(r *http.Request) string {
 	}
 	if host == "127.0.0.1" || host == "::1" {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			var candidate string
 			if i := strings.LastIndexByte(xff, ','); i >= 0 {
-				return strings.TrimSpace(xff[i+1:])
+				candidate = strings.TrimSpace(xff[i+1:])
+			} else {
+				candidate = strings.TrimSpace(xff)
 			}
-			return strings.TrimSpace(xff)
+			// If the rightmost XFF segment is empty (trailing comma or whitespace-only),
+			// fall back to the direct RemoteAddr rather than returning "" which would
+			// cause all such requests to share a single empty-string auth-failure bucket.
+			if candidate != "" {
+				return candidate
+			}
 		}
 	}
 	return host

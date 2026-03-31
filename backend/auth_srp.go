@@ -179,7 +179,7 @@ func srpInitHandshake(aHex string, verifierHex string) (string, error) {
 	srpSessionsMu.Lock()
 	if len(srpSessions) >= 200 {
 		srpSessionsMu.Unlock()
-		return "", errSRPInvalidA
+		return "", errSRPCapacityExceeded
 	}
 	srpSessions[aKeyHex] = &srpSession{
 		A:        A,
@@ -255,6 +255,11 @@ var (
 	errSRPSessionNotFound = srpError("session_not_found")
 	errSRPSessionExpired  = srpError("session_expired")
 	errSRPBadM1           = srpError("bad_M1")
+	// errSRPCapacityExceeded is returned when the srpSessions map has reached its
+	// 200-entry cap. Kept separate from errSRPInvalidA so handlers can distinguish
+	// a protocol error from a transient server-capacity condition and return
+	// different HTTP status codes without leaking internal state to clients.
+	errSRPCapacityExceeded = srpError("capacity_exceeded")
 )
 
 type srpError string

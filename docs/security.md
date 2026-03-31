@@ -88,6 +88,11 @@
 
 Bearer token 存储于内存 `activeTokens` map（最多 1000 条），不持久化到磁盘。
 
+**容量限制行为**：
+- `srpSessions` 握手会话最多 200 条（5 分钟 TTL，每 2 分钟清理）。超过上限时 `/api/auth/srp/init` 返回 503，不计入 IP 失败计数，响应体为通用 `{"error":"service_unavailable"}`。
+- `activeTokens` Bearer token 最多 1000 条（24 小时 TTL，每 10 分钟清理）。超过上限时 `/api/auth/srp/verify` 返回 503，响应体同为 `{"error":"service_unavailable"}`。
+- 两种 cap 均使用不透明错误消息，无法从外部区分"容量耗尽"与其他服务端错误，避免攻击者探测内部状态。
+
 ### 4.2 MCP 认证
 
 - MCP Token 独立于 Session Bearer Token，由服务端生成（48 字符随机），仅存储 SHA-256 哈希。

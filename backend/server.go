@@ -1141,8 +1141,15 @@ func (s *Server) handleSRPInit(c *gin.Context) {
 
 	bHex, err := srpInitHandshake(req.A, verifier)
 	if err != nil {
+		if err == errSRPCapacityExceeded {
+			// Transient server-capacity condition — do not penalise the IP.
+			// Return an opaque 503 so clients can retry without the caller
+			// being able to distinguish a capacity limit from a protocol error.
+			c.JSON(503, gin.H{"error": "service_unavailable"})
+			return
+		}
 		recordAuthFailure(ip)
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": "authentication_failed"})
 		return
 	}
 
@@ -1187,7 +1194,7 @@ func (s *Server) handleSRPVerify(c *gin.Context) {
 	activeTokensMu.Lock()
 	if len(activeTokens) >= 1000 {
 		activeTokensMu.Unlock()
-		c.JSON(503, gin.H{"error": "token_capacity_exceeded"})
+		c.JSON(503, gin.H{"error": "service_unavailable"})
 		return
 	}
 	activeTokens[token] = struct{}{}

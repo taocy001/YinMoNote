@@ -89,7 +89,10 @@ func (l *NoteLibrary) purgeExpiredTrash() {
 		if !validFileRegex.MatchString(id) {
 			continue
 		}
-		os.Remove(filepath.Join(l.DataDir, id))
+		if err := os.Remove(filepath.Join(l.DataDir, id)); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "[YinMo] purgeExpiredTrash: failed to remove %q: %v\n", id, err)
+			continue // skip markPending if file removal failed
+		}
 		l.markPending(id) // notify git so the deletion is committed
 	}
 
