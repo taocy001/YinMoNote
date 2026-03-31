@@ -121,6 +121,27 @@ func (dfs *davFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, e
 	return dfs.inner.Stat(ctx, name)
 }
 
+// isBlockedSegment returns true for filename segments that must never be
+// exposed via WebDAV, either in path access checks or directory listings.
+func isBlockedSegment(seg string) bool {
+	if seg == "_structure.json" {
+		return true
+	}
+	if strings.HasPrefix(seg, ".") {
+		return true
+	}
+	if strings.HasPrefix(seg, "~") || strings.HasSuffix(seg, "~") {
+		return true
+	}
+	if strings.ContainsRune(seg, 0) {
+		return true
+	}
+	if len(seg) > 255 {
+		return true
+	}
+	return false
+}
+
 // allowed returns false for paths that must not be exposed via WebDAV.
 //
 // Blacklisted (rejected regardless of position in path):
@@ -148,24 +169,7 @@ func (dfs *davFileSystem) allowed(name string) bool {
 		if seg == "" {
 			continue
 		}
-		// Internal structure file must never be accessible via WebDAV.
-		if seg == "_structure.json" {
-			return false
-		}
-		// Hidden files and directories (e.g. .git, .DS_Store).
-		if strings.HasPrefix(seg, ".") {
-			return false
-		}
-		// Editor/OS temporary files (e.g. foo~, ~lock.foo).
-		if strings.HasPrefix(seg, "~") || strings.HasSuffix(seg, "~") {
-			return false
-		}
-		// Null byte injection guard.
-		if strings.ContainsRune(seg, 0) {
-			return false
-		}
-		// Filesystem name length limit.
-		if len(seg) > 255 {
+		if isBlockedSegment(seg) {
 			return false
 		}
 	}
@@ -184,21 +188,7 @@ func (f *davDirFile) Readdir(count int) ([]os.FileInfo, error) {
 	entries, err := f.File.Readdir(count)
 	filtered := entries[:0]
 	for _, e := range entries {
-		n := e.Name()
-		// Skip internal YinMoNote file.
-		if n == "_structure.json" {
-			continue
-		}
-		// Skip hidden files and directories (e.g. .git, .DS_Store).
-		if strings.HasPrefix(n, ".") {
-			continue
-		}
-		// Skip editor/OS temporary files (e.g. foo~, ~lock.foo).
-		if strings.HasPrefix(n, "~") || strings.HasSuffix(n, "~") {
-			continue
-		}
-		// Skip names with null bytes or exceeding filesystem limits.
-		if strings.ContainsRune(n, 0) || len(n) > 255 {
+		if isBlockedSegment(e.Name()) {
 			continue
 		}
 		filtered = append(filtered, e)
@@ -232,17 +222,17 @@ func (f *davCommitFile) Write(p []byte) (int, error) {
 func (f *davCommitFile) Close() error {
 	err := f.File.Close()
 	if err == nil && f.rel != "" && f.written {
-		// For newly-created .md files, verify the final size against MaxNoteSize.
-		// CheckNoteQuota at OpenFile time only enforced the count limit (size was 0).
-		if f.isNew && strings.HasSuffix(f.rel, ".md") {
+		if strings.HasSuffix(f.rel, ".md") {
 			info, statErr := os.Stat(f.lib.FullPath(f.rel))
 			if statErr == nil && info.Size() > f.lib.Config.MaxNoteSize {
-				// Remove the oversized file; it has not been markPending yet so git
-				// is unaffected. Signal the reconciler so the structure stays clean.
-				if rmErr := os.Remove(f.lib.FullPath(f.rel)); rmErr != nil {
-					// Removal failed (rare filesystem error); the oversized file is left
-					// on disk but will not be committed to git. Log for operator visibility.
-					fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note cleanup failed: %v\n", rmErr)
+				if f.isNew {
+					if rmErr := os.Remove(f.lib.FullPath(f.rel)); rmErr != nil {
+						fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note cleanup failed: %v\n", rmErr)
+					}
+				} else {
+					if truncErr := os.Truncate(f.lib.FullPath(f.rel), 0); truncErr != nil {
+						fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note truncation failed: %v\n", truncErr)
+					}
 				}
 				f.lib.reconcilePending.Store(true)
 				return &davQuotaError{reason: "limit_note_size"}
@@ -305,12 +295,15 @@ func (s *Server) newDavHandler() http.Handler {
 		if r.Method == http.MethodPut || r.Method == "PROPFIND" ||
 			r.Method == "PROPPATCH" || r.Method == "MKCOL" {
 			r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+		} else if r.Method == "LOCK" {
+			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		}
 		ip := davClientIP(r)
 
 		s.Library.mu.Lock()
 		srpVerifier := s.Library.Config.SRPVerifier
 		webdavTokenHash := s.Library.Config.WebDAVTokenHash
+		serverEncrypt := s.Library.Config.ServerEncrypt
 		s.Library.mu.Unlock()
 
 		// If the server has a password but no WebDAV token has been issued,
@@ -343,9 +336,6 @@ func (s *Server) newDavHandler() http.Handler {
 		// Reject WebDAV access when server-side encryption is enabled.
 		// Files on disk contain ENC1-prefixed ciphertext unreadable by third-party
 		// WebDAV apps, and any write would corrupt the encrypted note store.
-		s.Library.mu.Lock()
-		serverEncrypt := s.Library.Config.ServerEncrypt
-		s.Library.mu.Unlock()
 		if serverEncrypt {
 			w.Header().Set("X-YinMo-Error", "server-encrypt-incompatible")
 			http.Error(w,
@@ -368,8 +358,8 @@ func davClientIP(r *http.Request) string {
 	}
 	if host == "127.0.0.1" || host == "::1" {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.IndexByte(xff, ','); i >= 0 {
-				return strings.TrimSpace(xff[:i])
+			if i := strings.LastIndexByte(xff, ','); i >= 0 {
+				return strings.TrimSpace(xff[i+1:])
 			}
 			return strings.TrimSpace(xff)
 		}

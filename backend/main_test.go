@@ -2902,7 +2902,16 @@ func TestDavClientIP(t *testing.T) {
 	t.Run("honours X-Forwarded-For from loopback proxy", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
 		req.RemoteAddr = "127.0.0.1:4321"
+		// Rightmost value is used: it is appended by the trusted proxy and cannot
+		// be injected by the client. "203.0.113.5" is an attacker-controlled prefix.
 		req.Header.Set("X-Forwarded-For", "203.0.113.5, 10.1.1.1")
+		assert.Equal(t, "10.1.1.1", davClientIP(req))
+	})
+
+	t.Run("single XFF entry from loopback proxy", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "127.0.0.1:4321"
+		req.Header.Set("X-Forwarded-For", "203.0.113.5")
 		assert.Equal(t, "203.0.113.5", davClientIP(req))
 	})
 

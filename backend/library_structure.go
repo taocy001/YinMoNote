@@ -54,7 +54,9 @@ func (l *NoteLibrary) GetStructure() string {
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		l.reconcileStructure()
 	}
+	l.structureMu.Lock()
 	d, err := os.ReadFile(p)
+	l.structureMu.Unlock()
 	if err != nil {
 		return "{}"
 	}
@@ -162,6 +164,20 @@ func (l *NoteLibrary) reconcileStructure() {
 			changed = true
 		} else {
 			st.ChildOrder[folderID] = newChildren
+		}
+	}
+
+	// 5b. Remove stale Parents entries: keys no longer on disk or whose parent
+	// folder ID was deleted during the ChildOrder cleanup above.
+	if st.Parents != nil {
+		for key, parentID := range st.Parents {
+			if strings.HasSuffix(key, ".md") && !actualFiles[key] {
+				delete(st.Parents, key)
+				changed = true
+			} else if _, folderExists := st.ChildOrder[parentID]; !folderExists && parentID != "" {
+				delete(st.Parents, key)
+				changed = true
+			}
 		}
 	}
 

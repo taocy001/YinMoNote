@@ -111,7 +111,11 @@ func NewNoteLibrary(dataDir, assetsDir, configPath string) (*NoteLibrary, error)
 // The total-note count is only checked when the note is new (stat returns not-exist),
 // avoiding a full directory scan on every save of an existing note.
 func (l *NoteLibrary) CheckNoteQuota(n string, s int64) error {
-	if s > l.Config.MaxNoteSize {
+	l.mu.Lock()
+	maxNoteSize := l.Config.MaxNoteSize
+	maxTotalNotes := l.Config.MaxTotalNotes
+	l.mu.Unlock()
+	if s > maxNoteSize {
 		return fmt.Errorf("limit_note_size")
 	}
 	if _, err := os.Stat(l.FullPath(n)); os.IsNotExist(err) {
@@ -119,7 +123,7 @@ func (l *NoteLibrary) CheckNoteQuota(n string, s int64) error {
 		if listErr != nil {
 			return fmt.Errorf("quota_check_failed")
 		}
-		if len(notes) >= l.Config.MaxTotalNotes {
+		if len(notes) >= maxTotalNotes {
 			return fmt.Errorf("limit_total_notes")
 		}
 	}
