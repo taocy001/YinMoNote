@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,15 @@ import (
 
 	"golang.org/x/net/webdav"
 )
+
+// davQuotaError is returned by davFileSystem.OpenFile and davCommitFile.Close
+// when a WebDAV write would exceed a configured quota.
+// It wraps os.ErrPermission so the webdav package translates it to 403 Forbidden.
+type davQuotaError struct{ reason string }
+
+func (e *davQuotaError) Error() string  { return "quota exceeded: " + e.reason }
+func (e *davQuotaError) Is(target error) bool { return target == os.ErrPermission }
+func (e *davQuotaError) Unwrap() error  { return os.ErrPermission }
 
 // davFileSystem wraps webdav.Dir to:
 //  1. Block access to internal YinMoNote files (_structure.json, hidden files).
@@ -33,6 +43,22 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 	if !dfs.allowed(name) {
 		return nil, os.ErrPermission
 	}
+	// For new .md files (O_CREATE and file absent), enforce the total-note-count quota
+	// BEFORE inner.OpenFile creates the file on disk. This prevents the race where
+	// inner.OpenFile creates the file and the subsequent stat finds it already present.
+	// Size quota is deferred to Close (the content is not yet known at open time).
+	isNew := false
+	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+		rel := strings.TrimPrefix(name, "/")
+		if flag&os.O_CREATE != 0 && strings.HasSuffix(rel, ".md") {
+			if _, statErr := os.Stat(dfs.lib.FullPath(rel)); os.IsNotExist(statErr) {
+				isNew = true
+				if err := dfs.lib.CheckNoteQuota(rel, 0); err != nil {
+					return nil, &davQuotaError{reason: err.Error()}
+				}
+			}
+		}
+	}
 	f, err := dfs.inner.OpenFile(ctx, name, flag, perm)
 	if err != nil {
 		return nil, err
@@ -46,7 +72,7 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
 		rel := strings.TrimPrefix(name, "/")
 		truncated := flag&os.O_TRUNC != 0
-		return &davCommitFile{File: f, lib: dfs.lib, rel: rel, written: truncated}, nil
+		return &davCommitFile{File: f, lib: dfs.lib, rel: rel, written: truncated, isNew: isNew}, nil
 	}
 	return f, nil
 }
@@ -184,11 +210,15 @@ func (f *davDirFile) Readdir(count int) ([]os.FileInfo, error) {
 
 // davCommitFile wraps a webdav.File opened for writing and calls markPending
 // when the file is closed after at least one successful Write call.
+// isNew is set when the target file did not exist at OpenFile time, enabling
+// total-note-count quota enforcement (checked at open) and per-file size quota
+// enforcement (checked at close via Stat on the written file).
 type davCommitFile struct {
 	webdav.File
 	lib     *NoteLibrary
 	rel     string
 	written bool
+	isNew   bool // target file was absent when OpenFile was called
 }
 
 func (f *davCommitFile) Write(p []byte) (int, error) {
@@ -202,6 +232,22 @@ func (f *davCommitFile) Write(p []byte) (int, error) {
 func (f *davCommitFile) Close() error {
 	err := f.File.Close()
 	if err == nil && f.rel != "" && f.written {
+		// For newly-created .md files, verify the final size against MaxNoteSize.
+		// CheckNoteQuota at OpenFile time only enforced the count limit (size was 0).
+		if f.isNew && strings.HasSuffix(f.rel, ".md") {
+			info, statErr := os.Stat(f.lib.FullPath(f.rel))
+			if statErr == nil && info.Size() > f.lib.Config.MaxNoteSize {
+				// Remove the oversized file; it has not been markPending yet so git
+				// is unaffected. Signal the reconciler so the structure stays clean.
+				if rmErr := os.Remove(f.lib.FullPath(f.rel)); rmErr != nil {
+					// Removal failed (rare filesystem error); the oversized file is left
+					// on disk but will not be committed to git. Log for operator visibility.
+					fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note cleanup failed: %v\n", rmErr)
+				}
+				f.lib.reconcilePending.Store(true)
+				return &davQuotaError{reason: "limit_note_size"}
+			}
+		}
 		f.lib.markPending(f.rel)
 		if strings.HasSuffix(f.rel, ".md") {
 			f.lib.reconcilePending.Store(true)

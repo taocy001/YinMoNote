@@ -3191,3 +3191,83 @@ func TestNonCanonicalNoteAccess(t *testing.T) {
 		assert.True(t, names["my-note.md"], "non-canonical WebDAV note should be listed")
 	})
 }
+
+// TestDavQuota verifies that WebDAV write operations enforce note quotas (P4).
+//
+// Note on HTTP status codes: golang.org/x/net/webdav translates FileSystem errors
+// with non-standard mapping in handlePut:
+//   - OpenFile error (non os.ErrNotExist) → 404 Not Found (webdav internal behaviour)
+//   - io.Copy / f.Stat error → 405 Method Not Allowed
+//   - f.Close error → mapped via statusFromFileError
+//
+// We test the observable invariants: file creation blocked, oversized file removed.
+func TestDavQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	newOpenLib := func(t *testing.T) (*NoteLibrary, http.Handler) {
+		t.Helper()
+		dir := t.TempDir()
+		lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(dir, "config.json"))
+		srv := &Server{Library: lib}
+		return lib, srv.newDavHandler()
+	}
+
+	doPut := func(davH http.Handler, filename, body string) int {
+		req, _ := http.NewRequest("PUT", "/dav/"+filename, strings.NewReader(body))
+		req.ContentLength = int64(len(body))
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	t.Run("PUT within quota succeeds with 2xx", func(t *testing.T) {
+		lib, davH := newOpenLib(t)
+		lib.Config.MaxNoteSize = 1024
+		lib.Config.MaxTotalNotes = 10
+		code := doPut(davH, "test-note.md", "# Hello")
+		assert.True(t, code == http.StatusCreated || code == http.StatusNoContent,
+			"within-quota PUT should return 201 or 204, got %d", code)
+	})
+
+	t.Run("PUT note count at limit is rejected (4xx)", func(t *testing.T) {
+		lib, davH := newOpenLib(t)
+		lib.Config.MaxTotalNotes = 2
+		// Pre-create 2 notes to fill the quota.
+		for i, name := range []string{"20260101aaaaaaaaaaaaaaaa.md", "20260101bbbbbbbbbbbbbbbb.md"} {
+			content := fmt.Sprintf("note %d", i)
+			require.NoError(t, os.WriteFile(filepath.Join(lib.DataDir, name), []byte(content), 0600))
+		}
+		// WebDAV PUT of a new note should be refused.
+		// golang.org/x/net/webdav maps non-ErrNotExist OpenFile errors to 404.
+		code := doPut(davH, "new-note.md", "# New")
+		assert.True(t, code >= 400, "count-quota exceeded should return 4xx, got %d", code)
+		// The file must not have been created.
+		_, statErr := os.Stat(filepath.Join(lib.DataDir, "new-note.md"))
+		assert.True(t, os.IsNotExist(statErr), "file should not exist when quota is exceeded")
+	})
+
+	t.Run("PUT oversized note is rejected and file is removed", func(t *testing.T) {
+		lib, davH := newOpenLib(t)
+		lib.Config.MaxNoteSize = 10 // 10 bytes limit
+		bigContent := strings.Repeat("x", 100)
+		code := doPut(davH, "big-note.md", bigContent)
+		assert.True(t, code >= 400, "size-quota exceeded should return 4xx, got %d", code)
+		// The file must not remain on disk after the quota rejection.
+		_, err := os.Stat(filepath.Join(lib.DataDir, "big-note.md"))
+		assert.True(t, os.IsNotExist(err), "oversized file should be removed after failed PUT")
+	})
+
+	t.Run("PUT existing note ignores count quota and succeeds", func(t *testing.T) {
+		lib, davH := newOpenLib(t)
+		lib.Config.MaxTotalNotes = 1
+		// Pre-create the note.
+		require.NoError(t, os.WriteFile(filepath.Join(lib.DataDir, "existing.md"), []byte("old"), 0600))
+		// Updating an existing note should succeed even when count quota is at limit.
+		code := doPut(davH, "existing.md", "new content")
+		assert.True(t, code == http.StatusCreated || code == http.StatusNoContent,
+			"updating existing note should succeed with 201 or 204, got %d", code)
+		// Verify the content was actually updated.
+		got, _ := os.ReadFile(filepath.Join(lib.DataDir, "existing.md"))
+		assert.Equal(t, "new content", string(got))
+	})
+}
