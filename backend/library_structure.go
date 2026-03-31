@@ -85,6 +85,8 @@ func (l *NoteLibrary) SaveStructure(s string) error {
 // The rebuilt file is written directly (no git commit) so the change is picked
 // up silently; the next user operation will push it into the commit queue.
 func (l *NoteLibrary) reconcileStructure() {
+	l.structureMu.Lock()
+	defer l.structureMu.Unlock()
 	// 1. Collect all valid .md filenames that exist on disk.
 	entries, err := os.ReadDir(l.DataDir)
 	if err != nil {

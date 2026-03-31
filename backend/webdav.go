@@ -88,20 +88,50 @@ func (dfs *davFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, e
 }
 
 // allowed returns false for paths that must not be exposed via WebDAV.
-// Blocked: _structure.json (YinMoNote internal), hidden files/dirs (e.g. .git),
-// and any filename that does not match the canonical note/asset format.
+//
+// Blacklisted (rejected regardless of position in path):
+//   - "_structure.json" (YinMoNote internal index)
+//   - "." prefix (hidden files/dirs, e.g. .git)
+//   - "~" prefix or suffix (editor temp files, e.g. foo~, ~foo)
+//   - null byte in any segment (path-injection guard)
+//   - any segment longer than 255 bytes (filesystem limit)
+//
+// Path depth: at most 2 segments are allowed (root-level files and one
+// subdirectory, e.g. "assets/filename"). Deeper paths are rejected.
 func (dfs *davFileSystem) allowed(name string) bool {
-	// Walk each segment of the path so that e.g. /.git/config is also blocked.
-	for _, seg := range strings.Split(name, "/") {
+	segments := strings.Split(strings.TrimPrefix(name, "/"), "/")
+	// Reject paths deeper than assets/<file> (2 levels).
+	nonEmpty := 0
+	for _, seg := range segments {
+		if seg != "" {
+			nonEmpty++
+		}
+	}
+	if nonEmpty > 2 {
+		return false
+	}
+	for _, seg := range segments {
 		if seg == "" {
 			continue
 		}
-		if seg == "_structure.json" || strings.HasPrefix(seg, ".") {
+		// Internal structure file must never be accessible via WebDAV.
+		if seg == "_structure.json" {
 			return false
 		}
-		// Reject non-canonical filenames — only note and asset filenames
-		// matching the canonical format (date + random + extension) are permitted.
-		if !dfs.lib.IsValidName(seg) {
+		// Hidden files and directories (e.g. .git, .DS_Store).
+		if strings.HasPrefix(seg, ".") {
+			return false
+		}
+		// Editor/OS temporary files (e.g. foo~, ~lock.foo).
+		if strings.HasPrefix(seg, "~") || strings.HasSuffix(seg, "~") {
+			return false
+		}
+		// Null byte injection guard.
+		if strings.ContainsRune(seg, 0) {
+			return false
+		}
+		// Filesystem name length limit.
+		if len(seg) > 255 {
 			return false
 		}
 	}
@@ -121,15 +151,20 @@ func (f *davDirFile) Readdir(count int) ([]os.FileInfo, error) {
 	filtered := entries[:0]
 	for _, e := range entries {
 		n := e.Name()
-		// Skip internal files and hidden paths (e.g. .git).
-		if n == "_structure.json" || strings.HasPrefix(n, ".") {
+		// Skip internal YinMoNote file.
+		if n == "_structure.json" {
 			continue
 		}
-		// Skip subdirectories (e.g. assets/) and any file that does not match
-		// the canonical note/asset filename format. This prevents walkFS from
-		// calling Stat on paths that allowed() would reject, which would
-		// otherwise cause PROPFIND to return "Internal Server Error".
-		if e.IsDir() || !validFileRegex.MatchString(n) {
+		// Skip hidden files and directories (e.g. .git, .DS_Store).
+		if strings.HasPrefix(n, ".") {
+			continue
+		}
+		// Skip editor/OS temporary files (e.g. foo~, ~lock.foo).
+		if strings.HasPrefix(n, "~") || strings.HasSuffix(n, "~") {
+			continue
+		}
+		// Skip names with null bytes or exceeding filesystem limits.
+		if strings.ContainsRune(n, 0) || len(n) > 255 {
 			continue
 		}
 		filtered = append(filtered, e)
