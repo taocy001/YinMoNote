@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,6 +90,7 @@ func (l *NoteLibrary) purgeExpiredTrash() {
 			continue
 		}
 		os.Remove(filepath.Join(l.DataDir, id))
+		l.markPending(id) // notify git so the deletion is committed
 	}
 
 	// Also remove purged IDs from titles and tags maps if present.
@@ -130,6 +132,8 @@ func (l *NoteLibrary) purgeExpiredTrash() {
 	if err != nil {
 		return
 	}
-	atomicWriteFile(structPath, newData, 0600)
+	if err := atomicWriteFile(structPath, newData, 0600); err != nil {
+		fmt.Fprintf(os.Stderr, "YinMo: purgeExpiredTrash failed to update structure: %v\n", err)
+	}
 	l.markPending("_structure.json")
 }

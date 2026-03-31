@@ -49,6 +49,9 @@ func (l *NoteLibrary) CheckStructureQuota(s Structure) error {
 // GetStructure loads the hierarchical structure of the library.
 // If the file is missing it triggers reconcileStructure first so the client
 // always receives a structure that at least lists every note on disk.
+// The ReadFile is protected by structureMu to prevent a torn read concurrent
+// with SaveStructure. Note: the preceding os.Stat check is not under structureMu,
+// so reconcileStructure may be called redundantly in rare concurrent cases (benign).
 func (l *NoteLibrary) GetStructure() string {
 	p := l.FullPath("_structure.json")
 	if _, err := os.Stat(p); os.IsNotExist(err) {
@@ -84,6 +87,8 @@ func (l *NoteLibrary) SaveStructure(s string) error {
 //   - If the file is plain JSON → remove references to .md files that no longer
 //     exist on disk, and append any .md files missing from the structure to the
 //     top-level order. Folder IDs (non-filename format) are left untouched.
+//   - Stale Parents entries are pruned: keys for deleted .md files and keys whose
+//     parent folder was removed during the ChildOrder cleanup are deleted (step 5b).
 //
 // The rebuilt file is written directly (no git commit) so the change is picked
 // up silently; the next user operation will push it into the commit queue.

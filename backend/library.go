@@ -135,7 +135,11 @@ func (l *NoteLibrary) CheckNoteQuota(n string, s int64) error {
 // counted, matching the set visible in handleListAssets. Stray files (e.g. .gitkeep,
 // OS artefacts, .tmp leftovers) are excluded so they cannot silently exhaust the quota.
 func (l *NoteLibrary) CheckAssetQuota(s int64) error {
-	if s > l.Config.MaxAssetSize {
+	l.mu.Lock()
+	maxAssetSize := l.Config.MaxAssetSize
+	maxTotalAssets := l.Config.MaxTotalAssets
+	l.mu.Unlock()
+	if s > maxAssetSize {
 		return fmt.Errorf("limit_asset_size")
 	}
 	entries, err := os.ReadDir(filepath.Join(l.DataDir, l.AssetsDir))
@@ -151,7 +155,7 @@ func (l *NoteLibrary) CheckAssetQuota(s int64) error {
 			}
 		}
 	}
-	if count >= l.Config.MaxTotalAssets {
+	if count >= maxTotalAssets {
 		return fmt.Errorf("limit_total_assets")
 	}
 	return nil

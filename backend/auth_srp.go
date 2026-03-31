@@ -173,8 +173,14 @@ func srpInitHandshake(aHex string, verifierHex string) (string, error) {
 	S := new(big.Int).Exp(Avu, bPriv, srpN)
 
 	// Store session keyed by the canonical (pad256) form of A.
+	// Limit map size to 200 to prevent unauthenticated callers from exhausting
+	// memory by flooding /srp/init with distinct A values.
 	aKeyHex := hex.EncodeToString(pad256(A))
 	srpSessionsMu.Lock()
+	if len(srpSessions) >= 200 {
+		srpSessionsMu.Unlock()
+		return "", errSRPInvalidA
+	}
 	srpSessions[aKeyHex] = &srpSession{
 		A:        A,
 		b:        bPriv,

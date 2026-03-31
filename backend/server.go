@@ -425,8 +425,12 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	// Enforce encryption: reject plaintext when serverEncrypt is enabled
-	if s.Library.Config.ServerEncrypt && !strings.HasPrefix(req.Content, "ENC1:") {
+	// Enforce encryption: reject plaintext when serverEncrypt is enabled.
+	// Snapshot ServerEncrypt under mu to avoid a data race with handleUpdateConfig.
+	s.Library.mu.Lock()
+	serverEncrypt := s.Library.Config.ServerEncrypt
+	s.Library.mu.Unlock()
+	if serverEncrypt && !strings.HasPrefix(req.Content, "ENC1:") {
 		// Allow JSON-encoded ENC1 strings (axios sends `"ENC1:..."`)
 		trimmed := strings.TrimSpace(req.Content)
 		if !(len(trimmed) > 1 && trimmed[0] == '"' && strings.HasPrefix(trimmed[1:], "ENC1:")) {
@@ -490,8 +494,12 @@ func (s *Server) handleSaveStructure(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 		return
 	}
-	// Enforce encryption: reject plaintext structure when serverEncrypt is enabled
-	if s.Library.Config.ServerEncrypt {
+	// Enforce encryption: reject plaintext structure when serverEncrypt is enabled.
+	// Snapshot ServerEncrypt under mu to avoid a data race with handleUpdateConfig.
+	s.Library.mu.Lock()
+	serverEncryptForStructure := s.Library.Config.ServerEncrypt
+	s.Library.mu.Unlock()
+	if serverEncryptForStructure {
 		c.JSON(400, gin.H{"error": "encryption_required"})
 		return
 	}

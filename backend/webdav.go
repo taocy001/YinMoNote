@@ -230,8 +230,11 @@ func (f *davCommitFile) Close() error {
 						fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note cleanup failed: %v\n", rmErr)
 					}
 				} else {
-					if truncErr := os.Truncate(f.lib.FullPath(f.rel), 0); truncErr != nil {
-						fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note truncation failed: %v\n", truncErr)
+					// Existing file: O_TRUNC already destroyed the original content at
+					// OpenFile time. Remove the partially-written oversized file so the
+					// note does not silently linger at 0 bytes or at a partial size.
+					if rmErr := os.Remove(f.lib.FullPath(f.rel)); rmErr != nil {
+						fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note cleanup (overwrite) failed: %v\n", rmErr)
 					}
 				}
 				f.lib.reconcilePending.Store(true)

@@ -78,25 +78,31 @@
 
 ### 4.1 主认证
 
-三种方式按优先级评估：
+认证基于 SRP-6a（RFC 5054 2048-bit 群组）。三种方式按优先级评估：
 
 | 方式 | 条件 | 说明 |
 |------|------|------|
-| Bearer Token | `SessionTokenHash` 已设置 | 前端生成 token，服务端仅存 SHA-256 哈希；通过 `Authorization: Bearer <token>` 传递 |
+| Bearer Token | `SRPVerifier` 已设置 | SRP-6a 握手（`/api/auth/srp/init` + `/api/auth/srp/verify`）验证密码后颁发 32 字节随机 Bearer token；通过 `Authorization: Bearer <token>` 传递；24 小时 TTL |
 | HTTP Basic Auth | `AUTH_USER` 环境变量 | 环境变量指定用户名密码 |
 | 开放访问 | 以上均未配置 | Keyless 模式，无认证 |
 
-Token 比对使用 `subtle.ConstantTimeCompare()`，防止时序攻击。
+Bearer token 存储于内存 `activeTokens` map（最多 1000 条），不持久化到磁盘。
 
 ### 4.2 MCP 认证
 
-- MCP Token 独立于 Session Token，由服务端生成（48 字符随机），仅存储 SHA-256 哈希。
+- MCP Token 独立于 Session Bearer Token，由服务端生成（48 字符随机），仅存储 SHA-256 哈希。
 - 生成时返回一次明文，之后不可再次获取。
-- 未配置 MCP Token 时，MCP 端点返回 503。
+- 未配置 MCP Token 时，MCP 端点返回 401。
 
 ### 4.3 WebDAV 认证
 
-- 使用 HTTP Basic Auth，密码为 Session Token 原文。
+WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
+
+- 通过 Settings → Security 生成，原文仅展示一次（关闭面板后清除）。
+- 服务端存储 SHA-256 哈希（`webdavTokenHash` 字段，跨重启持久化）。
+- 认证方式：HTTP Basic Auth，用户名任意，密码为 raw token 原文。
+- 服务端对提交密码计算 SHA-256 后与 `webdavTokenHash` 进行常量时间比对。
+- 访问规则：已设置 `webdavTokenHash` → 必须提供 token；已设置 `SRPVerifier` 但未设置 `webdavTokenHash` → 拒绝所有请求；均未设置 → 开放访问（keyless 模式）。
 - 共享主认证的 IP 级退避机制。
 
 ### 4.4 暴力破解防护
@@ -112,7 +118,7 @@ Token 比对使用 `subtle.ConstantTimeCompare()`，防止时序攻击。
 
 - 文件名严格正则校验：`^[0-9]{8}[a-z0-9]{16}\.(md|png|jpg|jpeg|gif|webp)$`
 - 路径拼接后物理字符检查，双重防止路径穿透
-- 所有 handler 前置 `IsValidName` 校验（包括 delete、history、rollback 等端点）
+- `handleGetNote`/`handleDeleteNote` 使用 `isExposableNote`（黑名单，接受非 canonical 文件名）；`handleGetHistory`/`handleGetVersion`/`handleRollback` 仍使用 `IsValidName`（白名单正则）；`handleSaveNote` 对 canonical 名使用白名单、非 canonical 名使用黑名单（只允许更新，不允许创建）
 - 文件写入前配额检查（`CheckNoteQuota` / `CheckAssetQuota` / `CheckStructureQuota`），防止部分写入
 - Git 哈希校验：`[0-9a-f]{40}`（40 字符小写十六进制）
 - Proxy 信任仅限 `127.0.0.1` 和 `::1`，防止 X-Forwarded-For 伪造

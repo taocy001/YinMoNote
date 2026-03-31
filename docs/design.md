@@ -90,10 +90,10 @@ Go 后端 (Gin)
 - `sync.Mutex`（非 RWMutex）：所有文件操作均为写密集型，用普通互斥锁避免 RWMutex 在写多读少场景下的优先级反转。
 - 配额检查（`CheckNoteQuota` / `CheckAssetQuota` / `CheckStructureQuota`）在写入前完成，防止部分写入后才触发超限。
 - Git 自动提交：`StartAutoCommitter` goroutine 采用空闲感知策略——用户停止编辑 5 分钟后提交，或持续编辑时每 10 分钟强制提交（以先到者为准），保留完整版本历史。
-- `reconcileStructure`：启动时自动修复 `_structure.json` 与磁盘文件的不一致。
+- `reconcileStructure`：在三种场景下触发：(1) 启动时；(2) `GetStructure()` 发现文件缺失；(3) `StartReconcileDebouncer` 每 2 秒轮询 `reconcilePending` 标志（WebDAV 写入/删除后设置）。自动修复 `_structure.json` 与磁盘文件的不一致，并清理 Parents map 中的孤立条目。
 
 **Server** 是纯路由层，不直接操作文件：
-- 认证优先级：Bearer Token（SessionTokenHash）→ HTTP Basic Auth（AUTH_USER 环境变量）→ 开放访问（keyless 模式）。
+- 认证优先级：Bearer Token（SRP-6a 握手后颁发，`SRPVerifier` 已设置）→ HTTP Basic Auth（`AUTH_USER` 环境变量）→ 开放访问（keyless 模式）。
 - IP 级连续失败退避（共享于所有认证端点），每次失败增加 500ms 延迟（上限 5s），并发延迟上限 20 个。
 - `handleSaveStructure` 对明文 JSON 做空结构完整性校验：若 order 为空但磁盘存在笔记文件，则拒绝写入，防止前端 bug 导致结构被清空。
 - `IsValidName` 用严格正则（`^[0-9]{8}[a-z0-9]{16}\.(md|...)$`）校验文件名，配合物理路径 Join 双重拦截路径穿透。
@@ -175,15 +175,16 @@ WebAuthn 实现细节（双层策略）：**Tier 1**（PRF 扩展，Chrome 120+/
 
 ### 3.4 认证体系
 
-服务端支持三种认证方式（按优先级）：
+服务端支持三种认证方式（按优先级，详见 `docs/security.md` 第 4 节）：
 
 | 方式 | 条件 | 说明 |
 |------|------|------|
-| Bearer Token | `SessionTokenHash` 已设置 | 前端生成 token，服务端仅存 SHA-256 哈希；`Authorization: Bearer <token>` |
+| Bearer Token | `SRPVerifier` 已设置 | SRP-6a 握手验证密码后颁发 32 字节随机 token；`Authorization: Bearer <token>`；24 小时 TTL |
 | HTTP Basic Auth | `AUTH_USER` 环境变量 | 环境变量指定用户名密码 |
 | 开放访问 | 以上均未配置 | Keyless 模式，无认证 |
 
-MCP 独立认证：MCP Token 由服务端生成（48 字符随机），仅存哈希，生成时返回一次明文。
+MCP 独立认证：MCP Token 由服务端生成（48 字符随机），仅存哈希，生成时返回一次明文。  
+WebDAV 独立认证：静态 WebDAV token（与 SRP Session Token 无关），详见 `docs/security.md` 第 4.3 节。
 
 ### 3.5 E2EE 元数据
 
