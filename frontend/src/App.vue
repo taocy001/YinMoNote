@@ -452,14 +452,20 @@
         :mcpTokenError="mcpTokenError"
         :mcpCaFingerprint="mcpCaFingerprint"
         :mcpCaExpiry="mcpCaExpiry"
+        :webdavTokenValue="webdavTokenValue"
+        :webdavTokenSet="webdavTokenSet"
+        :webdavTokenLoading="webdavTokenLoading"
+        :webdavTokenError="webdavTokenError"
         @close="closeSettings"
         @apply="applySettings(true)"
-        @force-close="showSettings = false; showSettingsCloseConfirm = false; mcpTokenValue = ''"
+        @force-close="showSettings = false; showSettingsCloseConfirm = false; mcpTokenValue = ''; webdavTokenValue = ''"
         @open-reset-modal="openResetModal"
         @export-key="handleExportMasterKey"
         @change-password="handleChangePassword"
         @mcp-generate-token="handleMCPGenerateToken"
         @mcp-revoke-token="handleMCPRevokeToken"
+        @webdav-generate-token="handleWebDAVGenerateToken"
+        @webdav-revoke-token="handleWebDAVRevokeToken"
         @update:draftSettings="v => Object.assign(draftSettings, v)"
         @update:showSettingsCloseConfirm="v => showSettingsCloseConfirm = v"
         @update:settingsTab="v => settingsTab = v as 'appearance' | 'editor' | 'security' | 'ai'"
@@ -715,10 +721,14 @@ const settingsTab = ref<'appearance' | 'editor' | 'security' | 'ai'>('appearance
 // MCP token & CA state (fetched/managed separately from draftSettings)
 const mcpTokenValue = ref('')       // raw token shown once after generation
 const mcpTokenSet = ref(false)      // whether a token hash exists on the server
+const webdavTokenValue = ref('')    // raw WebDAV token shown once after generation
+const webdavTokenSet = ref(false)   // whether a WebDAV token hash exists on the server
 const mcpCaFingerprint = ref('')    // colon-separated SHA-256 from /api/mcp/ca-fingerprint
 const mcpCaExpiry = ref('')
 const mcpTokenLoading = ref(false)  // prevents double-click generating orphaned tokens
 const mcpTokenError = ref('')       // surfaced to user when generate/revoke fails
+const webdavTokenLoading = ref(false)
+const webdavTokenError = ref('')
 const editorRef = ref<{ saveStatus: string; doSave: () => Promise<void>; loadNote: () => Promise<void>; isContentEmpty: { value: boolean }; toggleHistory: () => void; exportHTML: () => Promise<void>; exportPDF: () => void; exportMarkdown: () => Promise<void> } | null>(null)
 const showMobileMore = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
@@ -1138,7 +1148,8 @@ const openSettings = async () => {
   // Load MCP policy from server config
   try {
     const cfg = (await axios.get(`${API_BASE}/config`)).data
-    mcpTokenSet.value = !!cfg.mcpTokenSet  // backend sends boolean, not the hash
+    mcpTokenSet.value = !!cfg.mcpTokenSet
+    webdavTokenSet.value = !!cfg.webdavTokenSet
     const policy = cfg.mcpPolicy || {}
     draftSettings.mcpEnabled = !!policy.enabled
     draftSettings.mcpDefaultAccess = policy.default_access || 'read'
@@ -1191,7 +1202,7 @@ const applySettings = async (close: boolean) => {
   }
 
   // Close modal before long-running batch so it doesn't linger under the overlay.
-  if (close) { showSettings.value = false; showSettingsCloseConfirm.value = false; mcpTokenValue.value = '' }
+  if (close) { showSettings.value = false; showSettingsCloseConfirm.value = false; mcpTokenValue.value = ''; webdavTokenValue.value = '' }
 
   if (encChanged) {
     // Flush editor and structure before batch so everything is saved in current state.
@@ -1207,6 +1218,7 @@ const closeSettings = () => {
   showSettings.value = false
   showSettingsCloseConfirm.value = false
   mcpTokenValue.value = ''
+  webdavTokenValue.value = ''
 }
 
 const handleMCPGenerateToken = async () => {
@@ -1237,6 +1249,36 @@ const handleMCPRevokeToken = async () => {
     mcpTokenError.value = 'revoke_failed'
   } finally {
     mcpTokenLoading.value = false
+  }
+}
+const handleWebDAVGenerateToken = async () => {
+  if (webdavTokenLoading.value) return
+  webdavTokenLoading.value = true
+  webdavTokenError.value = ''
+  try {
+    const res = (await axios.post(`${API_BASE}/webdav/token`)).data
+    webdavTokenValue.value = res.token || ''
+    webdavTokenSet.value = true
+  } catch (e) {
+    console.error('[YinMo] WebDAV token generation failed:', e)
+    webdavTokenError.value = 'generate_failed'
+  } finally {
+    webdavTokenLoading.value = false
+  }
+}
+const handleWebDAVRevokeToken = async () => {
+  if (webdavTokenLoading.value) return
+  webdavTokenLoading.value = true
+  webdavTokenError.value = ''
+  try {
+    await axios.delete(`${API_BASE}/webdav/token`)
+    webdavTokenValue.value = ''
+    webdavTokenSet.value = false
+  } catch (e) {
+    console.error('[YinMo] WebDAV token revocation failed:', e)
+    webdavTokenError.value = 'revoke_failed'
+  } finally {
+    webdavTokenLoading.value = false
   }
 }
 const draftSettings = reactive({ themeMode: 'auto' as string, lang: 'zh', fontSize: 16, editorWidth: 'full', typewriterMode: false, serverEncrypt: false, idleTimeout: 0, allowExternalImages: false, mcpEnabled: false, mcpDefaultAccess: 'read', mcpRules: [] as Array<{ condition: string; value: string; access: string }> })

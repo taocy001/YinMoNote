@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"os"
@@ -165,15 +168,16 @@ func (f *davCommitFile) Close() error {
 
 // newDavHandler returns an http.Handler that serves WebDAV at the /dav prefix.
 //
-// Authentication mirrors the REST API SRP-6a token model:
-//   - SRPVerifier set in config → require Basic Auth where the password is
-//     the Bearer token issued by a completed SRP-6a handshake.
-//     The username field is ignored — any value is accepted.
-//   - SRPVerifier not set → open access (same as keyless REST API mode).
+// Authentication uses a persistent static WebDAV token (SHA-256 hash stored in
+// config.json as webdavTokenHash).  The token is generated via the Settings UI
+// and survives server restarts.
 //
-// This means WebDAV clients use the same credential as the web app.
-// In Obsidian/iA Writer: username = anything (e.g. "yinmonote"), password = the
-// session token shown in the app's Settings → WebDAV section.
+// Access rules:
+//   - webdavTokenHash set → require Basic Auth; password must be the raw token.
+//     Username is ignored — any value is accepted.
+//   - webdavTokenHash not set, SRPVerifier set → deny (server has a password but
+//     no WebDAV token has been issued; do not open WebDAV to anonymous access).
+//   - webdavTokenHash not set, SRPVerifier not set → open access (keyless mode).
 //
 // Brute-force protection: the same per-IP progressive-delay mechanism
 // (applyAuthDelay / recordAuthFailure / clearAuthFailures) is applied here.
@@ -214,9 +218,18 @@ func (s *Server) newDavHandler() http.Handler {
 
 		s.Library.mu.Lock()
 		srpVerifier := s.Library.Config.SRPVerifier
+		webdavTokenHash := s.Library.Config.WebDAVTokenHash
 		s.Library.mu.Unlock()
 
-		if srpVerifier != "" {
+		// If the server has a password but no WebDAV token has been issued,
+		// deny all WebDAV access rather than leaving it open.
+		if srpVerifier != "" && webdavTokenHash == "" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="YinMoNote"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if webdavTokenHash != "" {
 			applyAuthDelay(ip)
 			_, pass, ok := r.BasicAuth()
 			if !ok || pass == "" {
@@ -225,10 +238,9 @@ func (s *Server) newDavHandler() http.Handler {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
-			activeTokensMu.Lock()
-			_, valid := activeTokens[pass]
-			activeTokensMu.Unlock()
-			if !valid {
+			sum := sha256.Sum256([]byte(pass))
+			got := hex.EncodeToString(sum[:])
+			if subtle.ConstantTimeCompare([]byte(got), []byte(webdavTokenHash)) != 1 {
 				recordAuthFailure(ip)
 				w.Header().Set("WWW-Authenticate", `Basic realm="YinMoNote"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
