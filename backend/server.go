@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,6 +126,10 @@ func (s *Server) SetupRouter() *gin.Engine {
 		// POST creates/replaces the MCP token; DELETE revokes it.
 		api.POST("/mcp/token", s.handleMCPSetToken)
 		api.DELETE("/mcp/token", s.handleMCPRevokeToken)
+		// WebDAV token management — persisted in config.json, survives restarts.
+		// POST creates/replaces the WebDAV token; DELETE revokes it.
+		api.POST("/webdav/token", s.handleWebDAVSetToken)
+		api.DELETE("/webdav/token", s.handleWebDAVRevokeToken)
 		api.GET("/notes", s.handleListNotes)
 		api.GET("/notes/bulk", s.handleBulkGetNotes)
 		api.GET("/notes/:filename", s.handleGetNote)
@@ -284,18 +290,21 @@ func (s *Server) handleGetConfig(c *gin.Context) {
 	s.Library.mu.Lock()
 	cfg := s.Library.Config
 	mcpTokenSet := cfg.MCPTokenHash != ""
+	webdavTokenSet := cfg.WebDAVTokenHash != ""
 	s.Library.mu.Unlock()
 	// Never expose authentication secrets to clients.
 	cfg.SRPSalt = ""
 	cfg.SRPVerifier = ""
 	cfg.MCPTokenHash = ""
-	// Augment with a boolean so the UI can tell whether an MCP token is configured
-	// without receiving the hash itself.
+	cfg.WebDAVTokenHash = ""
+	// Augment with booleans so the UI can tell whether tokens are configured
+	// without receiving the hashes themselves.
 	type configResp struct {
 		AppConfig
-		MCPTokenSet bool `json:"mcpTokenSet"`
+		MCPTokenSet    bool `json:"mcpTokenSet"`
+		WebDAVTokenSet bool `json:"webdavTokenSet"`
 	}
-	c.JSON(200, configResp{AppConfig: cfg, MCPTokenSet: mcpTokenSet})
+	c.JSON(200, configResp{AppConfig: cfg, MCPTokenSet: mcpTokenSet, WebDAVTokenSet: webdavTokenSet})
 }
 
 func (s *Server) handleUpdateConfig(c *gin.Context) {
@@ -326,6 +335,7 @@ func (s *Server) handleUpdateConfig(c *gin.Context) {
 	cfg.SRPSalt = s.Library.Config.SRPSalt
 	cfg.SRPVerifier = s.Library.Config.SRPVerifier
 	cfg.MCPTokenHash = s.Library.Config.MCPTokenHash
+	cfg.WebDAVTokenHash = s.Library.Config.WebDAVTokenHash
 	// Preserve salt if client didn't send one (partial update must not clear it)
 	if cfg.Pbkdf2Salt == "" { cfg.Pbkdf2Salt = s.Library.Config.Pbkdf2Salt }
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -1157,6 +1167,45 @@ func (s *Server) handleSRPVerify(c *gin.Context) {
 }
 
 // handleTestResetAuth clears SRPVerifier and SRPSalt unconditionally.
+// handleWebDAVSetToken generates a new WebDAV token, stores its SHA-256 hash in
+// config.json, and returns the raw token once. Replaces any existing token.
+func (s *Server) handleWebDAVSetToken(c *gin.Context) {
+	rawToken := randomString(48)
+	sum := sha256.Sum256([]byte(rawToken))
+	hash := hex.EncodeToString(sum[:])
+	if err := s.persistWebDAVTokenHash(hash); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "write_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": rawToken})
+}
+
+// handleWebDAVRevokeToken removes the WebDAV token hash, disabling WebDAV access.
+func (s *Server) handleWebDAVRevokeToken(c *gin.Context) {
+	if err := s.persistWebDAVTokenHash(""); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "write_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (s *Server) persistWebDAVTokenHash(hash string) error {
+	s.Library.mu.Lock()
+	defer s.Library.mu.Unlock()
+	oldHash := s.Library.Config.WebDAVTokenHash
+	s.Library.Config.WebDAVTokenHash = hash
+	data, err := json.MarshalIndent(s.Library.Config, "", "  ")
+	if err != nil {
+		s.Library.Config.WebDAVTokenHash = oldHash
+		return err
+	}
+	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
+		s.Library.Config.WebDAVTokenHash = oldHash
+		return err
+	}
+	return nil
+}
+
 // Registered ONLY when SYNC_COMMIT=1 (E2E test environment).
 // Allows E2E teardown to restore open/keyless access after password-mode tests
 // without needing the current session token.

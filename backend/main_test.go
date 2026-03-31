@@ -2787,18 +2787,25 @@ func TestWebDAV(t *testing.T) {
 	})
 }
 
-// TestDavAuth verifies that WebDAV authentication uses the SRP-issued Bearer token
-// (same credential as the web app REST API) rather than AUTH_USER/AUTH_PASS env vars.
-// Username field is ignored; password must equal the raw Bearer token from activeTokens.
+// TestDavAuth verifies the WebDAV static-token authentication model:
+//   - No password (SRPVerifier unset) → open access.
+//   - SRPVerifier set, no WebDAVTokenHash → deny (C-003 guard).
+//   - WebDAVTokenHash set → require Basic Auth; password must be the raw token.
+//   - Username field is always ignored.
 func TestDavAuth(t *testing.T) {
-	// newSrvWithToken creates a server with SRP auth set up and performs a full
-	// handshake to obtain a valid Bearer token.
+	// newSrvWithToken creates a server with SRP auth and a static WebDAV token.
+	// Returns the server, the WebDAV handler, and the raw token string.
 	newSrvWithToken := func(t *testing.T) (*Server, http.Handler, string) {
 		t.Helper()
-		lib, r, _ := setupSRPLib(t, "webdav-test-password")
-		token := performSRPHandshake(t, r, "webdav-test-password")
+		lib, _, _ := setupSRPLib(t, "webdav-test-password")
+		rawToken := randomString(48)
+		sum := sha256.Sum256([]byte(rawToken))
+		hash := hex.EncodeToString(sum[:])
+		lib.mu.Lock()
+		lib.Config.WebDAVTokenHash = hash
+		lib.mu.Unlock()
 		srv := &Server{Library: lib}
-		return srv, srv.newDavHandler(), token
+		return srv, srv.newDavHandler(), rawToken
 	}
 
 	propfind := func(body string) *http.Request {
@@ -2816,7 +2823,19 @@ func TestDavAuth(t *testing.T) {
 		assert.Equal(t, 207, w.Code)
 	})
 
-	t.Run("401 when SRPVerifier set and no credentials", func(t *testing.T) {
+	t.Run("401 when SRPVerifier set but no WebDAVTokenHash (C-003 guard)", func(t *testing.T) {
+		lib, _, _ := setupSRPLib(t, "webdav-test-password")
+		// WebDAVTokenHash intentionally NOT set — C-003 guard must deny access.
+		srv := &Server{Library: lib}
+		davH := srv.newDavHandler()
+		req := propfind("")
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Header().Get("WWW-Authenticate"), `Basic realm=`)
+	})
+
+	t.Run("401 when no credentials provided", func(t *testing.T) {
 		_, davH, _ := newSrvWithToken(t)
 		req := propfind("")
 		w := httptest.NewRecorder()
@@ -2825,16 +2844,16 @@ func TestDavAuth(t *testing.T) {
 		assert.Contains(t, w.Header().Get("WWW-Authenticate"), `Basic realm=`)
 	})
 
-	t.Run("401 on wrong token (not in activeTokens)", func(t *testing.T) {
+	t.Run("401 on wrong token", func(t *testing.T) {
 		_, davH, _ := newSrvWithToken(t)
 		req := propfind("")
-		req.SetBasicAuth("anything", "not-a-valid-srp-token")
+		req.SetBasicAuth("anything", "not-a-valid-static-token")
 		w := httptest.NewRecorder()
 		davH.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 
-	t.Run("207 on correct SRP token (username ignored)", func(t *testing.T) {
+	t.Run("207 on correct static token (username ignored)", func(t *testing.T) {
 		_, davH, token := newSrvWithToken(t)
 		req := propfind(`<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
 		req.SetBasicAuth("yinmonote", token) // username can be anything
@@ -2846,7 +2865,7 @@ func TestDavAuth(t *testing.T) {
 	t.Run("brute-force: failure counter increments and clears on correct token", func(t *testing.T) {
 		_, davH, token := newSrvWithToken(t)
 
-		const fakeIP = "192.0.2.88"
+		const fakeIP = "192.0.2.89"
 		send := func(pass string) int {
 			req := propfind("")
 			req.RemoteAddr = fakeIP + ":12345"
@@ -2862,7 +2881,7 @@ func TestDavAuth(t *testing.T) {
 		authFailuresMu.Lock()
 		entry := authFailures[fakeIP]
 		authFailuresMu.Unlock()
-		assert.NotNil(t, entry, "failure counter should be set after 3 bad attempts")
+		require.NotNil(t, entry, "failure counter should be set after 3 bad attempts")
 		assert.Equal(t, 3, entry.count)
 
 		assert.Equal(t, 207, send(token))
