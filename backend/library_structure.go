@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 // CheckStructureQuota validates structural integrity of the folder hierarchy.
@@ -94,7 +95,7 @@ func (l *NoteLibrary) reconcileStructure() {
 	}
 	actualFiles := make(map[string]bool)
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") && l.IsValidName(e.Name()) {
+		if !e.IsDir() && isExposableNote(e.Name()) {
 			actualFiles[e.Name()] = true
 		}
 	}
@@ -136,7 +137,7 @@ func (l *NoteLibrary) reconcileStructure() {
 	changed := false
 	newOrder := make([]string, 0, len(st.Order))
 	for _, id := range st.Order {
-		if validFileRegex.MatchString(id) && !actualFiles[id] {
+		if strings.HasSuffix(id, ".md") && !actualFiles[id] {
 			changed = true // note referenced but file gone
 		} else {
 			newOrder = append(newOrder, id)
@@ -150,7 +151,7 @@ func (l *NoteLibrary) reconcileStructure() {
 	for folderID, children := range st.ChildOrder {
 		newChildren := make([]string, 0, len(children))
 		for _, id := range children {
-			if validFileRegex.MatchString(id) && !actualFiles[id] {
+			if strings.HasSuffix(id, ".md") && !actualFiles[id] {
 				changed = true
 			} else {
 				newChildren = append(newChildren, id)
@@ -201,4 +202,56 @@ func (l *NoteLibrary) buildMinimalStructure(actualFiles map[string]bool) {
 		return
 	}
 	_ = l.AtomicWrite("_structure.json", d)
+}
+
+// isExposableNote returns true for .md files that should be visible via both
+// the WebDAV interface and the web API. Applies a blacklist (not a whitelist)
+// so that non-canonical filenames written by WebDAV clients are accepted while
+// truly dangerous or internal names are still rejected.
+//
+// Rejected:
+//   - "_structure.json" (internal index)
+//   - "." prefix (hidden files, e.g. .git)
+//   - "~" prefix or suffix (editor temp files)
+//   - null byte (path injection guard)
+//   - longer than 255 bytes (filesystem limit)
+//   - does not end in ".md"
+func isExposableNote(name string) bool {
+	if !strings.HasSuffix(name, ".md") {
+		return false
+	}
+	if name == "_structure.json" {
+		return false
+	}
+	if strings.HasPrefix(name, ".") {
+		return false
+	}
+	if strings.HasPrefix(name, "~") || strings.HasSuffix(name, "~") {
+		return false
+	}
+	if strings.ContainsRune(name, 0) {
+		return false
+	}
+	if len(name) > 255 {
+		return false
+	}
+	return true
+}
+
+// StartReconcileDebouncer runs as a background goroutine and coalesces multiple
+// WebDAV write/delete/rename events into a single reconcileStructure call.
+// It checks reconcilePending every 2 seconds; if the flag is set it clears it
+// and runs reconcileStructure once, regardless of how many WebDAV operations
+// triggered the flag since the last check.
+//
+// This prevents the O(N²) reconcile overhead during bulk uploads (N files →
+// N markPending calls → 1 reconcile instead of N reconciles).
+func (l *NoteLibrary) StartReconcileDebouncer() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		if l.reconcilePending.CompareAndSwap(true, false) {
+			l.reconcileStructure()
+		}
+	}
 }

@@ -60,6 +60,9 @@ func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
 		rel := strings.TrimPrefix(name, "/")
 		if rel != "" {
 			dfs.lib.markPending(rel)
+			if strings.HasSuffix(rel, ".md") {
+				dfs.lib.reconcilePending.Store(true)
+			}
 		}
 	}
 	return err
@@ -71,8 +74,13 @@ func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) e
 	}
 	err := dfs.inner.Rename(ctx, oldName, newName)
 	if err == nil {
-		dfs.lib.markPending(strings.TrimPrefix(oldName, "/"))
-		dfs.lib.markPending(strings.TrimPrefix(newName, "/"))
+		oldRel := strings.TrimPrefix(oldName, "/")
+		newRel := strings.TrimPrefix(newName, "/")
+		dfs.lib.markPending(oldRel)
+		dfs.lib.markPending(newRel)
+		if strings.HasSuffix(oldRel, ".md") || strings.HasSuffix(newRel, ".md") {
+			dfs.lib.reconcilePending.Store(true)
+		}
 	}
 	return err
 }
@@ -195,6 +203,9 @@ func (f *davCommitFile) Close() error {
 	err := f.File.Close()
 	if err == nil && f.rel != "" && f.written {
 		f.lib.markPending(f.rel)
+		if strings.HasSuffix(f.rel, ".md") {
+			f.lib.reconcilePending.Store(true)
+		}
 	}
 	return err
 }

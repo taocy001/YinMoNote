@@ -63,6 +63,7 @@ func main() {
 	go lib.StartAutoCommitter()
 	go lib.StartTrashPurger()
 	go lib.StartGitGC()
+	go lib.StartReconcileDebouncer()
 
 	// 5. Server setup
 	gin.SetMode(gin.ReleaseMode)

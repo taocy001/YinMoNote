@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -53,6 +54,10 @@ type NoteLibrary struct {
 	// concurrent use: simultaneous wt.Add/Remove/Commit calls from the auto-committer
 	// goroutine and synchronous delete/rollback handlers can corrupt the index.
 	gitMu sync.Mutex
+	// reconcilePending is set to true by WebDAV write/delete/rename operations to
+	// signal the reconcile debouncer that a structure refresh is needed.
+	// Avoids O(N²) reconcile calls during bulk uploads.
+	reconcilePending atomic.Bool
 }
 
 // NewNoteLibrary opens or creates the note library at dataDir.
