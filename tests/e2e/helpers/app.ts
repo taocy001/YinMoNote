@@ -14,7 +14,7 @@ export const BASE_URL = process.env.APP_URL ?? 'http://localhost:8080'
 // ─── Auth Reset ───────────────────────────────────────────────────────────────
 
 /**
- * Clear the server-side SessionTokenHash so subsequent keyless tests can reach
+ * Clear the server-side SRPVerifier so subsequent keyless tests can reach
  * the API without a Bearer token.
  *
  * Uses POST /api/test/reset-auth (available only when SYNC_COMMIT=1, i.e. the
@@ -34,7 +34,7 @@ export async function clearServerAuth(page: Page): Promise<void> {
     const token = await page.evaluate(() => sessionStorage.getItem('yinmo_session_token'))
     if (!token) return
     await page.request.post(`${BASE_URL}/api/auth/setup`, {
-      data: { token_hash: '' },
+      data: { srpSalt: '', srpVerifier: '' },
       headers: { 'Authorization': `Bearer ${token}` },
     })
   } catch (_) {
@@ -127,7 +127,7 @@ export async function initWithPassword(page: Page, password: string): Promise<vo
  * initialized on another device.
  *
  * Unlike initWithPassword, this does NOT call clearServerAuth first —
- * the server keeps its existing SessionTokenHash.  The app should detect the
+ * the server keeps its existing SRPVerifier.  The app should detect the
  * initialized state via GET /api/auth/status and present the password-unlock
  * UI (not the init wizard) for the user to enter their existing password.
  */

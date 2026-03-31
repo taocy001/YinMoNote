@@ -1527,10 +1527,12 @@ onMounted(async () => {
           // salt before key derivation without requiring a Bearer token.
           const statusRes = await axios.get(`${API_BASE}/auth/status`)
           if (statusRes.data.pbkdf2Salt) crypto.importSaltFromConfig(statusRes.data.pbkdf2Salt)
-          if (!crypto.hasLibrary() && statusRes.data.initialized) {
+          if (statusRes.data.initialized) {
             serverInitialized.value = true
-            unlockMode.value = 'password'
-            hasLibraryKey.value = true   // show UNLOCK UI, not INIT wizard
+            if (!crypto.hasLibrary()) {
+              unlockMode.value = 'password'
+              hasLibraryKey.value = true   // show UNLOCK UI, not INIT wizard
+            }
           }
         } catch {}
         showUnlockModal.value = true

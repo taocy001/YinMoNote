@@ -14,7 +14,7 @@
  *
  * "New device" is simulated by calling freshPage() WITHOUT clearServerAuth() first:
  * the browser-side state (localStorage / sessionStorage) is wiped, but the server
- * keeps its SessionTokenHash from the previous initWithPassword() call.
+ * keeps its SRPVerifier from the previous initWithPassword() call.
  */
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import {
