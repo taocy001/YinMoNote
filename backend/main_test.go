@@ -3111,3 +3111,83 @@ func TestPurgeExpiredTrash(t *testing.T) {
 		assert.NotPanics(t, func() { lib.purgeExpiredTrash() })
 	})
 }
+
+// TestNonCanonicalNoteAccess verifies that the API layer (P3) can read, update,
+// and delete notes with non-canonical filenames written by WebDAV clients.
+func TestNonCanonicalNoteAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(dir, "config.json"))
+	r := NewServer(lib).SetupRouter()
+
+	const nonCanonical = "my-webdav-note.md"
+	const content = "# WebDAV Note\nHello from WebDAV."
+
+	// Seed the file directly on disk (simulating a WebDAV PUT).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, nonCanonical), []byte(content), 0600))
+
+	t.Run("GET non-canonical note returns content", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/api/notes/"+nonCanonical, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, content, resp["content"])
+	})
+
+	t.Run("PUT non-canonical note updates existing file", func(t *testing.T) {
+		updated := "# Updated\nEdited via web."
+		body, _ := json.Marshal(map[string]string{"content": updated})
+		req, _ := http.NewRequest("PUT", "/api/notes/"+nonCanonical, bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		got, _ := os.ReadFile(filepath.Join(dir, nonCanonical))
+		assert.Equal(t, updated, string(got))
+	})
+
+	t.Run("PUT non-canonical note returns 404 when file absent", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]string{"content": "new content"})
+		req, _ := http.NewRequest("PUT", "/api/notes/absent-note.md", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("DELETE non-canonical note removes file", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", "/api/notes/"+nonCanonical, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		_, err := os.Stat(filepath.Join(dir, nonCanonical))
+		assert.True(t, os.IsNotExist(err), "file should be deleted")
+	})
+
+	t.Run("GET non-canonical note with blocked name returns 400", func(t *testing.T) {
+		for _, name := range []string{"_structure.json", ".hidden.md", "~temp.md", "note~.md"} {
+			req, _ := http.NewRequest("GET", "/api/notes/"+name, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			assert.True(t, w.Code >= 400, "blocked name %q should return >=400, got %d", name, w.Code)
+		}
+	})
+
+	t.Run("ListNotes includes non-canonical files", func(t *testing.T) {
+		dir2 := t.TempDir()
+		lib2, _ := NewNoteLibrary(dir2, "assets", filepath.Join(dir2, "config.json"))
+		// Write a canonical and a non-canonical note.
+		require.NoError(t, os.WriteFile(filepath.Join(dir2, "20260318aabbccddeeff0011.md"), []byte("canonical"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir2, "my-note.md"), []byte("non-canonical"), 0600))
+		notes, err := lib2.ListNotes()
+		require.NoError(t, err)
+		names := make(map[string]bool)
+		for _, n := range notes {
+			names[n.Name] = true
+		}
+		assert.True(t, names["20260318aabbccddeeff0011.md"], "canonical note should be listed")
+		assert.True(t, names["my-note.md"], "non-canonical WebDAV note should be listed")
+	})
+}

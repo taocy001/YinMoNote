@@ -362,7 +362,7 @@ func (s *Server) handleListNotes(c *gin.Context) {
 
 func (s *Server) handleGetNote(c *gin.Context) {
 	f := c.Param("filename")
-	if !s.Library.IsValidName(f) || f == "_structure.json" {
+	if !isExposableNote(f) {
 		c.JSON(400, gin.H{"error": "invalid"})
 		return
 	}
@@ -409,7 +409,11 @@ func (s *Server) handleBulkGetNotes(c *gin.Context) {
 
 func (s *Server) handleSaveNote(c *gin.Context) {
 	f := c.Param("filename")
-	if !s.Library.IsValidName(f) || f == "_structure.json" {
+	// Canonical names can create new notes; non-canonical names (e.g. written by
+	// WebDAV clients) can only update existing files to prevent TOCTOU races.
+	canonical := s.Library.IsValidName(f) && f != "_structure.json"
+	nonCanonical := !canonical && isExposableNote(f)
+	if !canonical && !nonCanonical {
 		c.JSON(400, gin.H{"error": "invalid"})
 		return
 	}
@@ -430,6 +434,20 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 			return
 		}
 	}
+	if nonCanonical {
+		// Non-canonical: only update existing file, do not create.
+		err := s.Library.UpdateNote(f, req.Content)
+		if err != nil {
+			if os.IsNotExist(err) {
+				c.JSON(404, gin.H{"error": "not_found"})
+			} else {
+				c.JSON(500, gin.H{"error": "save_failed"})
+			}
+			return
+		}
+		c.JSON(200, gin.H{"status": "ok"})
+		return
+	}
 	if err := s.Library.SaveNote(f, req.Content); err != nil {
 		c.JSON(500, gin.H{"error": "save_failed"})
 		return
@@ -439,7 +457,7 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 
 func (s *Server) handleDeleteNote(c *gin.Context) {
 	f := c.Param("filename")
-	if !s.Library.IsValidName(f) || f == "_structure.json" {
+	if !isExposableNote(f) {
 		c.JSON(400, gin.H{"error": "invalid"})
 		return
 	}

@@ -186,7 +186,7 @@ func (l *NoteLibrary) ListNotes() ([]NoteInfo, error) {
 	}
 	res := make([]NoteInfo, 0)
 	for _, f := range fs {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") && l.IsValidName(f.Name()) {
+		if !f.IsDir() && isExposableNote(f.Name()) {
 			info, err := f.Info()
 			if err != nil {
 				// File was deleted between ReadDir and Info (race with concurrent delete). Skip it.
@@ -213,6 +213,29 @@ func (l *NoteLibrary) SaveNote(n, c string) error {
 	}
 	if err := l.AtomicWrite(n, []byte(c)); err != nil {
 		return err
+	}
+	l.markPending(n)
+	return nil
+}
+
+// UpdateNote updates the content of an existing note. Unlike SaveNote, it does
+// not create a new file — if the file does not exist it returns an error.
+// Used by handleSaveNote for non-canonical filenames (written by WebDAV clients)
+// to prevent TOCTOU races: the client cannot implicitly create files it has not
+// seen in the structure.
+func (l *NoteLibrary) UpdateNote(n, c string) error {
+	// O_WRONLY|O_TRUNC without O_CREATE: returns os.ErrNotExist if the file is absent.
+	f, err := os.OpenFile(l.FullPath(n), os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := f.Write([]byte(c))
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
 	}
 	l.markPending(n)
 	return nil
