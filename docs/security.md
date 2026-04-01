@@ -91,7 +91,7 @@ Bearer token 存储于内存两个同步 map（`activeTokens` + `activeTokenExpi
 **容量限制行为**：
 - `srpSessions` 握手会话最多 200 条（5 分钟 TTL，每 2 分钟清理）。超过上限时 `/api/auth/srp/init` 返回 503，不计入 IP 失败计数，响应体为通用 `{"error":"service_unavailable"}`。
 - `activeTokens` Bearer token 最多 1000 条（24 小时 TTL，每 10 分钟清理）。超过上限时 `/api/auth/srp/verify` 返回 503，响应体同为 `{"error":"service_unavailable"}`。额外有**每 IP 最多 `maxTokensPerIP`（10）条**的限制，防止单一 IP 耗尽全局 cap 导致所有用户无法登录的 DoS。
-- `GET /api/auth/status` 端点（用于跨设备密钥派生获取 pbkdf2Salt）同样受 `applyAuthDelay` 保护，与其他认证端点一致。
+- `GET /api/auth/status` 端点**不**施加 `applyAuthDelay`。该端点返回 `pbkdf2Salt`（固定值，不可暴力破解）和 `initialized`（布尔值，登录 UI 已公开），延迟对此无安全收益。更重要的是，延迟会引起竞态：若 IP 已累积失败次数，延迟可能超过前端 handleUnlock 的执行时间，导致 `serverInitialized` 仍为 false，SRP 握手被跳过。
 - 两种 cap 均使用不透明错误消息，无法从外部区分"容量耗尽"与其他服务端错误，避免攻击者探测内部状态。
 
 ### 4.2 MCP 认证

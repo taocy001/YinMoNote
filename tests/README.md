@@ -21,24 +21,28 @@ tests/
     ├── helpers/
     │   └── app.ts            # Shared helpers: freshPage, unlock, createNote, …
     └── specs/
-        ├── 01-unlock.spec.ts          # 14 cases: first unlock, password / WebAuthn flow
-        ├── 02-notes-crud.spec.ts      # 12 cases: create / edit / delete notes
-        ├── 03-editor-features.spec.ts # 13 cases: formatting, code blocks, export
-        ├── 04-sidebar-search.spec.ts  #  9 cases: title search, tag filter
-        ├── 05-settings.spec.ts        # 16 cases: appearance / editor / quota settings
-        ├── 06-history.spec.ts         #  9 cases: version history, diff, rollback
-        ├── 07-lock-unlock.spec.ts     #  8 cases: lock / re-unlock
-        ├── 08-server-encrypt.spec.ts  #  9 cases: serverEncrypt mode
-        ├── 09-encryption-modes.spec.ts #  5 cases: encryption mode switching
-        ├── 10-coverage.spec.ts        #  7 cases: empty search, multi-note persistence, save status
-        └── 11-multi-device.spec.ts    # 13 cases: new-device login, concurrent sessions, re-lock
+        ├── 01-unlock.spec.ts           # first unlock, password / WebAuthn flow
+        ├── 02-notes-crud.spec.ts       # create / edit / delete notes
+        ├── 03-editor-features.spec.ts  # formatting, code blocks, export
+        ├── 04-sidebar-search.spec.ts   # title search, tag filter
+        ├── 05-settings.spec.ts         # appearance / editor / quota settings
+        ├── 06-history.spec.ts          # version history, diff, rollback
+        ├── 07-lock-unlock.spec.ts      # lock / re-unlock
+        ├── 08-server-encrypt.spec.ts   # serverEncrypt mode
+        ├── 09-encryption-modes.spec.ts # encryption mode switching
+        ├── 10-coverage.spec.ts         # empty search, multi-note persistence, save status
+        ├── 11-multi-device.spec.ts     # new-device login, concurrent sessions, re-lock
+        └── 99-screenshots.spec.ts      # screenshot capture (CI only)
 ```
+
+For per-spec case counts, see [docs/testing-guide.md](../docs/testing-guide.md).
 
 Unit tests live alongside their source:
 
 ```
-frontend/tests/    # Vitest unit tests  (226 cases)
-backend/*_test.go  # Go unit tests      (232 cases)
+frontend/tests/         # Vitest unit tests
+backend/*_test.go       # Go unit tests (backend/ package)
+tests/unit/webdav/      # Go unit tests (WebDAV title virtualisation — run separately)
 ```
 
 ---

@@ -1,6 +1,6 @@
 # 隐墨笔记 (YinMoNote) — 技术设计文档
 
-> 本文档是活文档，随功能演进持续更新。上次全量刷新：2026-03-26
+> 本文档是活文档，随功能演进持续更新。上次全量刷新：2026-04-02
 
 ---
 
@@ -63,15 +63,20 @@
   └── App.vue                # 布局容器：侧边栏 + 编辑区状态协调
            │ HTTPS
 Go 后端 (Gin)
-  ├── library.go / NoteLibrary  # 文件原子写、配额校验、Git 版本管理
-  ├── server.go  / Server       # HTTP 路由、认证退避、安全头
-  ├── mcp.go                    # MCP (Model Context Protocol) JSON-RPC 2.0 服务端
-  ├── mcp_policy.go             # MCP 访问控制策略求值
-  ├── config.go                 # 配置结构与 clamp 逻辑
-  ├── types.go                  # 共享数据类型
-  ├── webdav.go                 # WebDAV 支持（/dav/ 路径）
-  ├── selfca.go                 # 自签名 TLS 证书生成与加载
-  └── static.go                 # go:embed 前端静态资源
+  ├── library.go          # NoteLibrary 核心结构、CRUD、ListNotes
+  ├── library_structure.go # reconcileStructure、配额校验
+  ├── library_trash.go    # 回收站（软删除、恢复、永久删除、purge）
+  ├── library_git.go      # Git 自动提交（StartAutoCommitter、GitGC）
+  ├── library_util.go     # 工具函数（atomicWriteFile、extractNoteTitle）
+  ├── server.go           # HTTP 路由、认证退避、安全头
+  ├── auth_srp.go         # SRP-6a 握手（/api/auth/srp/init + verify）
+  ├── mcp.go              # MCP (Model Context Protocol) JSON-RPC 2.0 服务端
+  ├── mcp_policy.go       # MCP 访问控制策略求值
+  ├── config.go           # 配置结构与 clamp 逻辑
+  ├── types.go            # 共享数据类型
+  ├── webdav.go           # WebDAV 支持（/dav/ 路径；标题虚拟化；vault 前缀忽略）
+  ├── selfca.go           # 自签名 TLS 证书生成与加载
+  └── static.go           # go:embed 前端静态资源
            │ volume mount
 文件系统
   ├── ~/.yinmonote/config.json   # 服务配置（固定路径，不随笔记目录变化）
@@ -83,7 +88,7 @@ Go 后端 (Gin)
 
 ### 2.2 后端架构（Go）
 
-后端代码按职责分布于 `backend/` 目录下多个文件：`library.go`（NoteLibrary 文件操作层）、`server.go`（HTTP 路由与中间件）、`mcp.go` + `mcp_policy.go`（MCP 协议与访问控制）、`config.go`（配置结构与 clamp 逻辑）、`types.go`（共享数据类型）、`webdav.go`（WebDAV 支持）、`selfca.go`（自签 TLS）、`static.go`（前端资源嵌入）。`main.go` 仅做入口初始化。
+后端代码按职责分布于 `backend/` 目录下多个文件：NoteLibrary 层已拆分为 5 个文件（`library.go` 核心 CRUD、`library_structure.go` 结构对账与配额、`library_trash.go` 回收站、`library_git.go` Git 自动提交、`library_util.go` 工具函数）；`auth_srp.go` 实现 SRP-6a 握手；`server.go` 负责 HTTP 路由与中间件；`mcp.go` + `mcp_policy.go` 实现 MCP 协议与访问控制；`config.go` 管理配置结构与 clamp 逻辑；`webdav.go` 提供 WebDAV 支持（含标题虚拟化层和 vault 前缀忽略）；`selfca.go` 生成自签 TLS；`static.go` 嵌入前端资源。`main.go` 仅做入口初始化。
 
 **NoteLibrary** 是纯文件操作层，不感知 HTTP：
 - `AtomicWrite`：先写 `.tmp` 再 `os.Rename`，保证崩溃安全；无论进程何时被杀，磁盘上不会留下半写文件。
@@ -185,6 +190,11 @@ WebAuthn 实现细节（双层策略）：**Tier 1**（PRF 扩展，Chrome 120+/
 
 MCP 独立认证：MCP Token 由服务端生成（48 字符随机），仅存哈希，生成时返回一次明文。  
 WebDAV 独立认证：静态 WebDAV token（与 SRP Session Token 无关），详见 `docs/security.md` 第 4.3 节。
+
+**WebDAV 标题虚拟化**（`webdav.go`）：笔记在磁盘上以 `<YYYYMMDD><16位随机字符>.md` 的 canonical ID 存储，但 WebDAV 客户端（如 Obsidian）看到的是笔记标题（如 `数据中心网络.md`）。`davFileSystem` 实现了完整的 `webdav.FileSystem` 接口，在所有五个方法（`OpenFile`、`RemoveAll`、`Rename`、`Stat`、`Mkdir`）中透明地完成标题 ↔ canonical ID 的双向映射：
+- `buildTitleMap()`：扫描 `ListNotes()` 结果，调用 `extractNoteTitle()` 读取首行，经 `davSanitizeTitle()` 净化（替换 `/\:*?"<>|` 为 `_`，截断至 200 字节），构建双向 map。同名笔记自动追加 `(2).md`、`(3).md` 去重后缀。
+- `Rename` 作为标题修改：将 canonical ID 文件的 MOVE 操作实现为 H1 内容更新（`updateNoteH1`），保留 canonical ID 不变。
+- `normalizePath()`：剥除路径的第一段（vault 名前缀），使 Obsidian "Remote Base Directory" 设置为任意名称均可透明工作，无需与服务端目录匹配。
 
 ### 3.5 E2EE 元数据
 
@@ -381,7 +391,7 @@ WebDAV 独立认证：静态 WebDAV token（与 SRP Session Token 无关），�
 |------|------|------|
 | PWA | ✅ | manifest + Service Worker，可安装到桌面/主屏幕 |
 | 移动端适配 | ✅ | 响应式布局，侧边栏折叠，底部格式工具栏 |
-| WebDAV | ✅ | `/dav/` 路径，第三方客户端访问 |
+| WebDAV | ✅ | `/dav/` 路径；标题虚拟化（笔记标题而非随机 ID）；vault 前缀自动忽略 |
 | MCP 协议 | ✅ | SSE + JSON-RPC 2.0，7 个工具，AI 助手读写笔记 |
 | MCP 访问控制 | ✅ | 基于 tag/note_id/title_glob/subtree_of 的细粒度权限 |
 | 暗色模式 | ✅ | CSS 变量切换，跟随系统或手动 |

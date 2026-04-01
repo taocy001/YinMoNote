@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange?style=for-the-badge)](./LICENSE)
 ![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-blue?style=for-the-badge)
 
-YinMoNote is a self-hosted note-taking application that brings a commercial-grade Markdown writing experience — think Feishu Docs or Notion — to your own server. Every element renders live as you type, with no mode-switching between editing and preview.
+YinMoNote is a **browser-based document note application** that aims to deliver the writing experience of Feishu Docs — real-time rich-text editing, nested documents, version history, and one-click sharing — entirely on your own server with full data ownership. Every element renders live as you type; there is no mode-switching between editing and preview.
 
 ![Demo](docs/images/demo.gif)
 
@@ -52,11 +52,11 @@ Slash commands (`/`) insert any block element without leaving the keyboard. A bu
 ### Docker (recommended)
 
 ```bash
-make docker           # build Docker image
+make docker           # build Docker image → dist/yinmonote-<version>-docker-<arch>.tar
 make install-docker   # build + interactive install (data dir, port, access mode)
 ```
 
-`make install-docker` includes the build step. After installation the container starts automatically. Access at `http://localhost:8080`.
+`make install-docker` includes the build step and loads the `.tar` image into Docker. After installation the container starts automatically.
 
 ### Native Binary — macOS
 
@@ -78,13 +78,23 @@ For TLS, cross-compilation, `.deb` packaging, and all other build options, see [
 
 ## WebDAV
 
+Connect Obsidian Remotely Save, iA Writer, or any WebDAV client to sync notes as readable Markdown files.
+
 | Setting | Value |
 |---|---|
-| Server URL | `http://<host>:8080/dav/` (or `https://` with TLS) |
-| Username | Any value |
-| Password | Your session token (shown in **Settings → Security → Export Session Token**) |
+| Server URL | `https://<host>:7281/dav/` |
+| Username | `yinmonote` |
+| Password | WebDAV token — generate once in **Settings → Security → WebDAV token** |
 
-> **Note**: The WebDAV password is a derived session token, not your unlock password. If no password has been set (keyless mode), WebDAV access is unauthenticated.
+**Token setup**: open Settings → Security, click **Generate** under "WebDAV Token", copy the token (shown once only), paste it as the password in your WebDAV client.
+
+**Remote Base Directory**: any vault name is accepted. The server strips the leading directory segment and maps all paths to the note root — you do not need to match the server directory to your vault name.
+
+**File names**: WebDAV clients see human-readable note titles (e.g. `My Note.md`) rather than internal random IDs.
+
+**Server-side encryption**: when serverEncrypt is enabled, notes on disk are stored as `ENC1:` ciphertext that third-party WebDAV apps cannot read. Disable serverEncrypt before using WebDAV clients.
+
+> **Keyless mode**: if no password has been set on the server, WebDAV access is open and unauthenticated.
 
 ## AI Access (MCP)
 

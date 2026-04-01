@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange?style=for-the-badge)](./LICENSE)
 ![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-blue?style=for-the-badge)
 
-YinMoNote 是一款自托管笔记应用，旨在将飞书文档、Notion 等商业软件级别的 Markdown 写作体验带到你自己的服务器上。每个元素在输入时即时渲染，无需在编辑与预览模式之间切换。
+YinMoNote 是一款**基于浏览器的文档笔记软件**，目标是在你自己的服务器上实现飞书文档的使用体验——实时富文本编辑、嵌套文档、版本历史、一键分享——同时保持数据完全自主可控。每个元素在输入时即时渲染，无需在编辑与预览模式之间切换。
 
 ![Demo](docs/images/demo.gif)
 
@@ -52,11 +52,11 @@ YinMoNote 是一款自托管笔记应用，旨在将飞书文档、Notion 等商
 ### Docker（推荐）
 
 ```bash
-make docker           # 构建 Docker 镜像
+make docker           # 构建 Docker 镜像 → dist/yinmonote-<version>-docker-<arch>.tar
 make install-docker   # 构建 + 交互式安装（数据目录、端口、访问方式）
 ```
 
-`make install-docker` 已包含构建步骤。安装完成后容器自动启动，访问 `http://localhost:8080`。
+`make install-docker` 已包含构建步骤，会自动将 `.tar` 包加载到 Docker 并启动容器。
 
 ### 原生二进制 — macOS
 
@@ -78,13 +78,23 @@ TLS 配置、交叉编译、`.deb` 打包等更多构建选项，参见 [build/R
 
 ## WebDAV
 
+通过 WebDAV 连接 Obsidian Remotely Save、iA Writer 等客户端，将笔记作为可读 Markdown 文件同步。
+
 | 设置项 | 值 |
 |---|---|
-| 服务器地址 | `http://<host>:8080/dav/`（启用 TLS 后改为 `https://`） |
-| 用户名 | 任意值 |
-| 密码 | 会话令牌（在 **设置 → 安全 → 导出会话令牌** 中查看） |
+| 服务器地址 | `https://<host>:7281/dav/` |
+| 用户名 | `yinmonote` |
+| 密码 | WebDAV 令牌——在 **设置 → 安全 → WebDAV 令牌** 中一次性生成 |
 
-> **注意**：WebDAV 密码是派生的会话令牌，不是解锁密码。如果未设置密码（无密钥模式），WebDAV 无需认证即可访问。
+**令牌获取**：打开设置 → 安全，点击"WebDAV 令牌"下的**生成**，复制令牌（仅展示一次），粘贴到 WebDAV 客户端的密码栏。
+
+**远程基目录（Remote Base Directory）**：填任意名称均可。服务端会自动忽略 vault 名这一级目录前缀，将所有请求映射到笔记根目录，无需与服务端目录名匹配。
+
+**文件名显示**：WebDAV 客户端看到的是人类可读的笔记标题（如 `我的笔记.md`），而非内部随机 ID。
+
+**服务端加密**：启用 serverEncrypt 后，磁盘上的笔记以 `ENC1:` 密文存储，第三方 WebDAV 客户端无法读取。使用 WebDAV 客户端前请先关闭服务端加密。
+
+> **无密钥模式**：若服务端未设置密码，WebDAV 无需认证即可访问。
 
 ## AI 访问（MCP）
 

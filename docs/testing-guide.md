@@ -33,7 +33,15 @@
 
 **框架**：Go 标准 `testing` + `testify/assert` + `net/http/httptest`
 
-**文件**：`backend/main_test.go`（81 个函数 / 64 个子测试）、`backend/mcp_test.go`（18 个函数 / 73 个子测试）、`backend/perf_test.go`（1 个 Benchmark）
+**文件**：`backend/main_test.go`（85 个函数）、`backend/mcp_test.go`（18 个函数 / 73 个子测试）、`backend/perf_test.go`（1 个 Benchmark）
+
+**WebDAV 专项测试**（`tests/unit/webdav/`，26 个函数）：独立 Go 包，需单独运行（`cd tests/unit/webdav && go test ./...`），**不在** `./tests/test.sh backend` 的扫描范围内。
+
+| 文件 | 函数数 | 覆盖内容 |
+|---|---|---|
+| `dav_title_test.go` | 16 | 标题虚拟化：PROPFIND listing、GET/PUT/DELETE by title、MOVE→H1 更新、重名去重、非 canonical 直通、配额拦截、标题截断、空标题降级 |
+| `m3_gaps_test.go` | 7 | 路径深度拒绝（depth 6/7）、vault 前缀剥离（normalizePath）、Remotely Save probe 序列 |
+| `round3_gaps_test.go` | 3 | 内部文件屏蔽（_structure.json）、隐藏文件拒绝、深路径拒绝 |
 
 > **注意**：以下测试计数以代码为准，可通过 `grep -c '^func Test' backend/*_test.go` 和 `npx vitest --reporter=verbose` 验证。
 
@@ -125,7 +133,8 @@
 
 | 层级 | 框架 | 用例数（约）| 验证命令 |
 |------|------|------------|----------|
-| 后端单元 | Go test | ~240 | `./tests/test.sh backend` |
+| 后端单元（backend/） | Go test | ~240 | `./tests/test.sh backend` |
+| 后端单元（WebDAV） | Go test | 26 | `cd tests/unit/webdav && go test ./...` |
 | 前端单元 | Vitest | ~400 | `./tests/test.sh frontend` |
 | E2E | Playwright | ~110 | `./tests/test.sh e2e` |
 | **合计** | | **~750** | `./tests/test.sh` |

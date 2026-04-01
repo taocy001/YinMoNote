@@ -21,24 +21,28 @@ tests/
     ├── helpers/
     │   └── app.ts            # 公共封装：freshPage、unlock、createNote 等
     └── specs/
-        ├── 01-unlock.spec.ts          # 14 个用例：初次解锁、密码 / WebAuthn 流程
-        ├── 02-notes-crud.spec.ts      # 12 个用例：新建 / 编辑 / 删除笔记
-        ├── 03-editor-features.spec.ts # 13 个用例：格式化、代码块、导出
-        ├── 04-sidebar-search.spec.ts  #  9 个用例：标题搜索、标签过滤
-        ├── 05-settings.spec.ts        # 16 个用例：外观 / 编辑器 / 配额设置
-        ├── 06-history.spec.ts         #  9 个用例：版本历史、diff、回滚
-        ├── 07-lock-unlock.spec.ts     #  8 个用例：锁定 / 重新解锁
-        ├── 08-server-encrypt.spec.ts  #  9 个用例：serverEncrypt 模式
-        ├── 09-encryption-modes.spec.ts #  5 个用例：加密模式切换
-        ├── 10-coverage.spec.ts        #  7 个用例：空搜索、多笔记持久化、保存状态
-        └── 11-multi-device.spec.ts    # 13 个用例：新设备登录、并发会话、重锁重解
+        ├── 01-unlock.spec.ts           # 初次解锁、密码 / WebAuthn 流程
+        ├── 02-notes-crud.spec.ts       # 新建 / 编辑 / 删除笔记
+        ├── 03-editor-features.spec.ts  # 格式化、代码块、导出
+        ├── 04-sidebar-search.spec.ts   # 标题搜索、标签过滤
+        ├── 05-settings.spec.ts         # 外观 / 编辑器 / 配额设置
+        ├── 06-history.spec.ts          # 版本历史、diff、回滚
+        ├── 07-lock-unlock.spec.ts      # 锁定 / 重新解锁
+        ├── 08-server-encrypt.spec.ts   # serverEncrypt 模式
+        ├── 09-encryption-modes.spec.ts # 加密模式切换
+        ├── 10-coverage.spec.ts         # 空搜索、多笔记持久化、保存状态
+        ├── 11-multi-device.spec.ts     # 新设备登录、并发会话、重锁重解
+        └── 99-screenshots.spec.ts      # 截图捕获（仅 CI 环境）
 ```
+
+各 spec 的用例数详见 [docs/testing-guide.md](../docs/testing-guide.md)。
 
 单元测试与各自的源码放在一起：
 
 ```
-frontend/tests/    # Vitest 单元测试（226 个用例）
-backend/*_test.go  # Go 单元测试  （232 个用例）
+frontend/tests/         # Vitest 单元测试
+backend/*_test.go       # Go 单元测试（backend/ 包）
+tests/unit/webdav/      # Go 单元测试（WebDAV 标题虚拟化——需单独运行）
 ```
 
 ---
