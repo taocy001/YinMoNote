@@ -311,6 +311,84 @@ func TestGAP3_DavAllowedBlacklist(t *testing.T) {
 		assert.True(t, w.Code >= 400,
 			"PUT to tilde-suffix temp file (note.md~) must be rejected, got %d", w.Code)
 	})
+
+	t.Run("PUT at depth-5 (boundary) is allowed by allowed()", func(t *testing.T) {
+		// /dav/a/b/c/d/note.md has exactly 5 non-empty segments — at the limit, must pass.
+		_, davH := newOpenHandler(t)
+		req, _ := http.NewRequest("PUT", "/dav/a/b/c/d/note.md",
+			strings.NewReader("content"))
+		req.ContentLength = 7
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.NotEqual(t, http.StatusForbidden, w.Code,
+			"depth-5 path (at limit) must not be rejected by allowed(), got %d", w.Code)
+	})
+
+	t.Run("MKCOL at depth-3 is allowed by allowed()", func(t *testing.T) {
+		// Remotely Save creates a temp subfolder inside the base dir: base/rs-test-folder-xxx/
+		// = 2 segments. Files written inside = 3 segments. The directory itself is depth-2,
+		// but verify MKCOL at depth-3 is also not blocked by allowed().
+		dir, davH := newOpenHandler(t)
+		// Pre-create parent dirs so MKCOL can succeed at the filesystem level.
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "base", "sub"), 0755))
+		req, _ := http.NewRequest("MKCOL", "/dav/base/sub/newdir", nil)
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.NotEqual(t, http.StatusForbidden, w.Code,
+			"MKCOL at depth-3 must not be rejected by allowed(), got %d", w.Code)
+	})
+
+	t.Run("MKCOL at depth-6 is rejected", func(t *testing.T) {
+		// Six segments exceeds the depth-5 cap.
+		_, davH := newOpenHandler(t)
+		req, _ := http.NewRequest("MKCOL", "/dav/a/b/c/d/e/newdir", nil)
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.True(t, w.Code >= 400,
+			"MKCOL at depth-6 must be rejected by allowed(), got %d", w.Code)
+	})
+}
+
+// TestGAP3_RemoteSaveProbeSequence verifies the full Obsidian Remotely Save
+// connection-test sequence: MKCOL temp-folder (depth-2) → PUT probe file
+// (depth-3) → DELETE temp-folder. This was the exact flow that triggered the
+// depth-2 limit bug in the field.
+func TestGAP3_RemoteSaveProbeSequence(t *testing.T) {
+	dir := t.TempDir()
+	lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(t.TempDir(), "config.json"))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "_structure.json"),
+		[]byte(`{"order":[],"parents":{},"childOrder":{}}`), 0600))
+	// Pre-create the vault base dir ("test") that Remotely Save operates under.
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "test"), 0755))
+	srv := &Server{Library: lib}
+	davH := srv.newDavHandler()
+
+	// Step 1: MKCOL /dav/test/rs-test-folder-probe/ — depth 2, must succeed (201).
+	req, _ := http.NewRequest("MKCOL", "/dav/test/rs-test-folder-probe/", nil)
+	w := httptest.NewRecorder()
+	davH.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code,
+		"MKCOL of temp folder (depth-2) must return 201, got %d", w.Code)
+
+	// Step 2: PUT /dav/test/rs-test-folder-probe/probe.md — depth 3, must succeed (2xx).
+	req, _ = http.NewRequest("PUT", "/dav/test/rs-test-folder-probe/probe.md",
+		strings.NewReader("probe"))
+	req.ContentLength = 5
+	w = httptest.NewRecorder()
+	davH.ServeHTTP(w, req)
+	assert.True(t, w.Code >= 200 && w.Code < 300,
+		"PUT of probe file (depth-3) must return 2xx, got %d — depth cap too low?", w.Code)
+
+	// Step 3: DELETE /dav/test/rs-test-folder-probe/ — cleanup must succeed (204).
+	req, _ = http.NewRequest("DELETE", "/dav/test/rs-test-folder-probe/", nil)
+	w = httptest.NewRecorder()
+	davH.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code,
+		"DELETE of temp folder must return 204, got %d", w.Code)
+
+	// Verify the temp folder is gone.
+	_, err := os.Stat(filepath.Join(dir, "test", "rs-test-folder-probe"))
+	assert.True(t, os.IsNotExist(err), "temp folder must be deleted after probe sequence")
 }
 
 // ── GAP-4: StartReconcileDebouncer coalesces N WebDAV writes into one reconcile ─
