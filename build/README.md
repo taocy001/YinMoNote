@@ -111,6 +111,7 @@ These are passed to the container or the native binary at runtime (not at build 
 | `PORT` | `:8080` | Listen address, format `:port` |
 | `TZ` | — | Timezone (e.g. `Asia/Shanghai`) |
 | `SYNC_COMMIT` | — | Set to `1` to commit on every save (used in E2E tests) |
+| `E2E_RESET_AUTH` | — | **E2E tests only.** Set to `1` to register `POST /api/test/reset-auth`, an unauthenticated endpoint that wipes all SRP credentials. **Never set in production** — anyone with access can destroy your authentication setup. |
 | `ACME_DOMAIN` | — | Enable automatic TLS via Let's Encrypt (needs port 443) |
 | `TLS_CERT` / `TLS_KEY` | — | Custom TLS: path to PEM certificate and private key |
 | `TLS_SELF` | — | Set to `1` to generate a self-signed certificate (LAN / intranet). **Note:** biometric/fingerprint unlock (WebAuthn) requires a domain name and is automatically hidden when accessed via IP address. Use `ACME_DOMAIN` or a reverse proxy with a real domain to enable biometric unlock. |

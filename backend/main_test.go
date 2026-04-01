@@ -2278,6 +2278,7 @@ func TestHandleAuthSetup(t *testing.T) {
 		lib, r, _ := setupSRPLib(t, password)
 
 		req, _ := http.NewRequest("POST", "/api/test/reset-auth", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
@@ -2288,7 +2289,7 @@ func TestHandleAuthSetup(t *testing.T) {
 		lib.mu.Unlock()
 	})
 
-	t.Run("without E2E_RESET_AUTH POST /api/test/reset-auth does not clear verifier", func(t *testing.T) {
+	t.Run("without E2E_RESET_AUTH POST /api/test/reset-auth returns 404 and does not clear verifier", func(t *testing.T) {
 		lib, r, _ := setupSRPLib(t, password)
 		savedVerifier := func() string {
 			lib.mu.Lock()
@@ -2300,6 +2301,8 @@ func TestHandleAuthSetup(t *testing.T) {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
+		// Route must not be registered — Gin returns 404.
+		assert.Equal(t, http.StatusNotFound, w.Code, "reset-auth must return 404 when E2E_RESET_AUTH is not set")
 		lib.mu.Lock()
 		assert.Equal(t, savedVerifier, lib.Config.SRPVerifier, "verifier must not be cleared without E2E_RESET_AUTH")
 		lib.mu.Unlock()
@@ -2321,6 +2324,51 @@ func TestHandleAuthSetup(t *testing.T) {
 		w2 := httptest.NewRecorder()
 		r.ServeHTTP(w2, req2)
 		assert.Equal(t, http.StatusOK, w2.Code, "after clearing verifier, API must be open")
+	})
+
+	t.Run("concurrent first-time setup: disk and memory stay consistent", func(t *testing.T) {
+		// Two goroutines race to set the SRP verifier on a fresh (keyless) server.
+		// After both complete, the verifier stored in memory must match the one on
+		// disk, regardless of which goroutine won — this catches any lost-update
+		// window introduced by the "snapshot → release mu → disk IO → re-lock"
+		// pattern in handleAuthSetup.
+		lib, _ := NewNoteLibrary(t.TempDir(), "assets", filepath.Join(t.TempDir(), "config.json"))
+		r := NewServer(lib).SetupRouter()
+
+		makeBody := func(suffix string) string {
+			saltB64 := base64.StdEncoding.EncodeToString([]byte("fakesalt-" + suffix))
+			return fmt.Sprintf(`{"srpSalt":%q,"srpVerifier":"verifier-%s"}`, saltB64, suffix)
+		}
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for _, suffix := range []string{"A", "B"} {
+			suffix := suffix
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start // release both goroutines simultaneously
+				req, _ := http.NewRequest("POST", "/api/auth/setup",
+					strings.NewReader(makeBody(suffix)))
+				req.Header.Set("Content-Type", "application/json")
+				r.ServeHTTP(httptest.NewRecorder(), req)
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		lib.mu.Lock()
+		memVerifier := lib.Config.SRPVerifier
+		lib.mu.Unlock()
+
+		diskData, err := os.ReadFile(lib.ConfigPath)
+		require.NoError(t, err)
+		var diskConf struct{ SRPVerifier string }
+		require.NoError(t, json.Unmarshal(diskData, &diskConf))
+
+		assert.Equal(t, diskConf.SRPVerifier, memVerifier,
+			"disk and memory SRPVerifier must match after concurrent first-time setup")
+		assert.NotEmpty(t, memVerifier, "at least one concurrent setup must have succeeded")
 	})
 }
 
@@ -3206,6 +3254,54 @@ func TestPurgeExpiredTrash(t *testing.T) {
 
 		got, _ := os.ReadFile(filepath.Join(dir, "_structure.json"))
 		assert.Equal(t, data, got, "no rewrite when nothing expired")
+	})
+
+	t.Run("os.Remove failure keeps entry in trash and preserves titles/tags", func(t *testing.T) {
+		// Place a DIRECTORY at the note path so os.Remove fails (EISDIR / permission denied).
+		// After purgeExpiredTrash, the entry must still be in trash[] (for retry)
+		// and its metadata must NOT be cleared.
+		dir := t.TempDir()
+		lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(dir, "config.json"))
+
+		noteID := "20260318cccccccccccccccc.md"
+		require.NoError(t, os.Mkdir(filepath.Join(dir, noteID), 0755),
+			"create directory at note path to make os.Remove fail")
+		// A non-empty directory cannot be removed by os.Remove (ENOTEMPTY).
+		require.NoError(t, os.WriteFile(filepath.Join(dir, noteID, "blocker"), []byte("x"), 0600))
+
+		now := time.Now().UnixMilli()
+		structure := testStructure{
+			Order:  []string{},
+			Titles: map[string]string{noteID: "Should Keep"},
+			Tags:   map[string][]string{noteID: {"keep-tag"}},
+			Trash: []testTrashEntry{
+				{ID: noteID, DeletedAt: now - thirtyDaysMs - 86400000},
+			},
+		}
+		data, _ := json.Marshal(structure)
+		require.NoError(t, atomicWriteFile(filepath.Join(dir, "_structure.json"), data, 0600))
+
+		lib.purgeExpiredTrash()
+
+		updatedData, err := os.ReadFile(filepath.Join(dir, "_structure.json"))
+		require.NoError(t, err)
+		var updated testStructure
+		require.NoError(t, json.Unmarshal(updatedData, &updated))
+
+		// Entry must be kept in trash for retry.
+		require.Len(t, updated.Trash, 1, "failed-deletion entry must stay in trash for retry")
+		assert.Equal(t, noteID, updated.Trash[0].ID)
+
+		// Metadata must NOT be cleared for a file that was not deleted.
+		assert.Equal(t, "Should Keep", updated.Titles[noteID],
+			"title must be preserved for a file whose removal failed")
+		assert.Equal(t, []string{"keep-tag"}, updated.Tags[noteID],
+			"tags must be preserved for a file whose removal failed")
+
+		// The directory (blocking the removal) must still exist.
+		info, err := os.Stat(filepath.Join(dir, noteID))
+		require.NoError(t, err)
+		assert.True(t, info.IsDir(), "blocking directory must still exist on disk")
 	})
 
 	t.Run("missing structure file is handled gracefully", func(t *testing.T) {

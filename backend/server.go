@@ -1214,7 +1214,6 @@ func (s *Server) handleSRPVerify(c *gin.Context) {
 	})
 }
 
-// handleTestResetAuth clears SRPVerifier and SRPSalt unconditionally.
 // handleWebDAVSetToken generates a new WebDAV token, stores its SHA-256 hash in
 // config.json, and returns the raw token once. Replaces any existing token.
 func (s *Server) handleWebDAVSetToken(c *gin.Context) {
@@ -1258,10 +1257,18 @@ func (s *Server) persistWebDAVTokenHash(hash string) error {
 	return nil
 }
 
-// Registered ONLY when SYNC_COMMIT=1 (E2E test environment).
-// Allows E2E teardown to restore open/keyless access after password-mode tests
-// without needing the current session token.
+// Registered ONLY when E2E_RESET_AUTH=1 (dedicated E2E test environment variable,
+// separate from SYNC_COMMIT). Allows E2E teardown to restore open/keyless access
+// after password-mode tests without needing the current session token.
+// WARNING: never set E2E_RESET_AUTH=1 in production — this endpoint clears all
+// authentication credentials without requiring a valid session.
 func (s *Server) handleTestResetAuth(c *gin.Context) {
+	// Runtime loopback guard: even if E2E_RESET_AUTH=1 is accidentally set in a
+	// non-test environment, only localhost can invoke this endpoint.
+	if ip := c.ClientIP(); ip != "127.0.0.1" && ip != "::1" {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 	// Snapshot config under the lock, then release before disk I/O.
 	s.Library.mu.Lock()
 	cfgCopy := s.Library.Config

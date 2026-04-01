@@ -89,8 +89,10 @@ func NewNoteLibrary(dataDir, assetsDir, configPath string) (*NoteLibrary, error)
 			fmt.Fprintf(os.Stderr, "YinMo: failed to persist clamped config: %v\n", err)
 		}
 	}
-	// Ensure the assets directory exists (self-healing if manually deleted)
-	os.MkdirAll(filepath.Join(dataDir, assetsDir), 0755)
+	// Ensure the assets directory exists (self-healing if manually deleted).
+	if err := os.MkdirAll(filepath.Join(dataDir, assetsDir), 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "YinMo: failed to recreate assets directory: %v\n", err)
+	}
 
 	repo, err := git.PlainOpen(dataDir)
 	if err == git.ErrRepositoryNotExists {

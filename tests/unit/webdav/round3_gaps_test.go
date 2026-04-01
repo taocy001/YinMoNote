@@ -338,20 +338,14 @@ func TestR3GAP3_DavClientIPEdgeCases(t *testing.T) {
 			"IPv6 loopback proxy must use rightmost XFF value")
 	})
 
-	// Whitespace-only XFF value must NOT be used; fall back to RemoteAddr.
-	// Production code: `if xff := ...; xff != ""` — a string of spaces passes this
-	// check, then `strings.TrimSpace` returns "" which would be returned as the IP.
-	// This tests whether the implementation guards against that.
+	// Whitespace-only XFF value must fall back to RemoteAddr.
+	// The empty-string bug (where TrimSpace("   ") == "" was returned verbatim and
+	// corrupted applyAuthDelay's per-IP map key) was fixed in R4 (C-008).
 	t.Run("whitespace_only_xff_falls_back_to_remoteaddr", func(t *testing.T) {
 		req := makeReq("127.0.0.1:4321", "   ")
 		result := davClientIP(req)
-		// After TrimSpace the XFF is "". The caller should not use a blank IP.
-		// Current implementation: `return strings.TrimSpace(xff)` returns "".
-		// This test documents the actual behavior — if it returns "" that is a bug
-		// (a blank string will corrupt applyAuthDelay's per-IP map key).
-		assert.NotEqual(t, "", result,
-			"KNOWN GAP: whitespace-only XFF must not produce an empty IP string; "+
-				"expected fallback to RemoteAddr '127.0.0.1', got %q", result)
+		assert.Equal(t, "127.0.0.1", result,
+			"whitespace-only XFF must fall back to RemoteAddr, not return empty string")
 	})
 
 	// IPv6 address in XFF value must be returned verbatim.
@@ -370,15 +364,14 @@ func TestR3GAP3_DavClientIPEdgeCases(t *testing.T) {
 			"three-hop XFF must use the rightmost (last) value")
 	})
 
-	// Trailing comma in XFF (malformed but possible): "a, b," → TrimSpace("") = "".
-	// Documents current behavior; a blank result here is also a latent bug.
-	t.Run("trailing_comma_xff_documents_current_behavior", func(t *testing.T) {
+	// Trailing comma in XFF (malformed but possible): "a, b," → rightmost segment
+	// is "" after TrimSpace. The empty-candidate fallback (R4 C-008) must return
+	// RemoteAddr instead of an empty string.
+	t.Run("trailing_comma_xff_falls_back_to_remoteaddr", func(t *testing.T) {
 		req := makeReq("127.0.0.1:4321", "203.0.113.1, 10.0.0.1,")
 		result := davClientIP(req)
-		// The segment after the last comma is "". After TrimSpace it is still "".
-		// This test intentionally uses t.Logf not assert so it does not block the
-		// build, but makes the behavior visible in test output.
-		t.Logf("EDGE CASE: trailing-comma XFF returned %q (empty string is a latent bug)", result)
+		assert.Equal(t, "127.0.0.1", result,
+			"trailing-comma XFF must fall back to RemoteAddr, not return empty string")
 	})
 
 	// Non-loopback remote: XFF must be completely ignored regardless of value.

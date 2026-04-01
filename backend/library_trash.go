@@ -29,6 +29,12 @@ func (l *NoteLibrary) StartTrashPurger() {
 //     fields to the structure.
 //   - Validates trash entry IDs with validFileRegex before os.Remove to prevent
 //     path-traversal attacks from a tampered _structure.json.
+//
+// Deletion failure semantics: if os.Remove fails with a genuine error (not
+// os.IsNotExist), the entry is kept in the trash array and retried on the next
+// hourly run. This prevents the file from becoming a silent orphan — a note that
+// exists on disk but is invisible to the user and unrecoverable.
+// See TD-M3-033 in docs/arch/tech-debt.md.
 func (l *NoteLibrary) purgeExpiredTrash() {
 	l.structureMu.Lock()
 	defer l.structureMu.Unlock()
@@ -72,29 +78,34 @@ func (l *NoteLibrary) purgeExpiredTrash() {
 	now := time.Now().UnixMilli()
 	thirtyDays := int64(30 * 24 * 60 * 60 * 1000)
 	var remaining []trashEntry
-	var purged []string
+	var purgedEntries []trashEntry
 	for _, entry := range entries {
 		if now-entry.DeletedAt > thirtyDays {
-			purged = append(purged, entry.ID)
+			purgedEntries = append(purgedEntries, entry)
 		} else {
 			remaining = append(remaining, entry)
 		}
 	}
-	if len(purged) == 0 {
+	if len(purgedEntries) == 0 {
 		return
 	}
 
 	// Delete files — validate each ID to prevent path-traversal.
 	// Track only successfully deleted IDs so that metadata (titles/tags) is only
 	// cleared for files that were actually removed from disk.
+	// Entries where os.Remove fails are added back to remaining so the purger
+	// retries them on the next hourly run rather than silently orphaning the file.
 	var deletedIDs []string
-	for _, id := range purged {
+	for _, entry := range purgedEntries {
+		id := entry.ID
 		if !validFileRegex.MatchString(id) {
 			continue
 		}
 		if err := os.Remove(filepath.Join(l.DataDir, id)); err != nil && !os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "[YinMo] purgeExpiredTrash: failed to remove %q: %v\n", id, err)
-			continue // skip markPending and metadata cleanup if file removal failed
+			// Keep in trash for retry next hour; do not orphan the file.
+			remaining = append(remaining, entry)
+			continue
 		}
 		l.markPending(id) // notify git so the deletion is committed
 		deletedIDs = append(deletedIDs, id)

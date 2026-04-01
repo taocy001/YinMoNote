@@ -107,6 +107,7 @@ DOCKER=1 make build
 | `PORT` | `:8080` | 监听地址，格式 `:端口号` |
 | `TZ` | — | 时区（如 `Asia/Shanghai`） |
 | `SYNC_COMMIT` | — | 设为 `1` 时每次保存立即提交 Git（E2E 测试用） |
+| `E2E_RESET_AUTH` | — | **仅 E2E 测试用。**设为 `1` 时注册 `POST /api/test/reset-auth`，该端点无需认证即可清除所有 SRP 凭据。**严禁在生产环境设置** — 任何可访问服务的人均可销毁认证体系。 |
 | `ACME_DOMAIN` | — | 通过 Let's Encrypt 自动申请 TLS 证书（需 443 端口） |
 | `TLS_CERT` / `TLS_KEY` | — | 自带 TLS：PEM 证书和私钥文件路径 |
 | `TLS_SELF` | — | 设为 `1` 时自动生成自签名证书（适合局域网 / 内网）。**注意：**指纹/面容解锁（WebAuthn）需要域名，通过 IP 地址访问时该选项自动隐藏。如需指纹解锁，请使用 `ACME_DOMAIN` 或反向代理绑定域名。 |
