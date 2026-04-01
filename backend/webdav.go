@@ -151,18 +151,23 @@ func isBlockedSegment(seg string) bool {
 //   - null byte in any segment (path-injection guard)
 //   - any segment longer than 255 bytes (filesystem limit)
 //
-// Path depth: at most 2 segments are allowed (root-level files and one
-// subdirectory, e.g. "assets/filename"). Deeper paths are rejected.
+// Path depth: at most 5 segments are allowed, supporting WebDAV clients that
+// use a base directory (e.g. Obsidian Remotely Save with vault root "test"):
+//   depth 1 — root files            e.g. "note.md"
+//   depth 2 — one subfolder         e.g. "assets/image.png", "test/note.md"
+//   depth 3 — two subfolders        e.g. "test/Daily Notes/note.md"
+//   depth 4 — three subfolders      e.g. "test/Projects/Work/note.md"
+//   depth 5 — four subfolders       e.g. "test/A/B/C/note.md"
+// Paths deeper than 5 segments are rejected to bound directory tree growth.
 func (dfs *davFileSystem) allowed(name string) bool {
 	segments := strings.Split(strings.TrimPrefix(name, "/"), "/")
-	// Reject paths deeper than assets/<file> (2 levels).
 	nonEmpty := 0
 	for _, seg := range segments {
 		if seg != "" {
 			nonEmpty++
 		}
 	}
-	if nonEmpty > 2 {
+	if nonEmpty > 5 {
 		return false
 	}
 	for _, seg := range segments {

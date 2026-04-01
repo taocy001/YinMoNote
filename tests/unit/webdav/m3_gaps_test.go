@@ -248,21 +248,34 @@ func TestGAP3_DavAllowedBlacklist(t *testing.T) {
 		assert.NoError(t, statErr, "_structure.json must NOT be deleted when WebDAV rejects it")
 	})
 
-	t.Run("PUT to depth-3 path is rejected", func(t *testing.T) {
-		// /dav/subdir/another/note.md has 3 non-empty segments: subdir, another, note.md
+	t.Run("PUT to depth-3 path is allowed by allowed()", func(t *testing.T) {
+		// /dav/subdir/another/note.md has 3 non-empty segments — within the depth-5 limit.
+		// This supports WebDAV clients using a base directory (e.g. Obsidian Remotely Save
+		// with vault root "test": test/<folder>/note.md = 3 segments).
 		_, davH := newOpenHandler(t)
 		req, _ := http.NewRequest("PUT", "/dav/subdir/another/note.md",
 			strings.NewReader("content"))
 		req.ContentLength = 7
 		w := httptest.NewRecorder()
 		davH.ServeHTTP(w, req)
+		assert.NotEqual(t, http.StatusForbidden, w.Code,
+			"depth-3 path must not be rejected by allowed(), got %d", w.Code)
+	})
+
+	t.Run("PUT to depth-6 path is rejected", func(t *testing.T) {
+		// /dav/a/b/c/d/e/note.md has 6 non-empty segments — exceeds the depth-5 limit.
+		_, davH := newOpenHandler(t)
+		req, _ := http.NewRequest("PUT", "/dav/a/b/c/d/e/note.md",
+			strings.NewReader("content"))
+		req.ContentLength = 7
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
 		assert.True(t, w.Code >= 400,
-			"PUT to depth-3 path must be rejected by allowed(), got %d", w.Code)
+			"PUT to depth-6 path must be rejected by allowed(), got %d", w.Code)
 	})
 
 	t.Run("PUT to assets subdirectory (depth-2) is allowed by allowed()", func(t *testing.T) {
 		// /dav/assets/image.png has 2 non-empty segments: assets, image.png — within the limit.
-		// This tests the boundary: depth 2 is allowed, depth 3 is not.
 		// Note: the underlying file creation may fail for other reasons (not an .md file, etc.)
 		// but allowed() itself must NOT reject it.
 		_, davH := newOpenHandler(t)
