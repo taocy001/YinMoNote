@@ -223,8 +223,11 @@ func (f *davCommitFile) Close() error {
 	err := f.File.Close()
 	if err == nil && f.rel != "" && f.written {
 		if strings.HasSuffix(f.rel, ".md") {
+			f.lib.mu.Lock()
+			maxNoteSize := f.lib.Config.MaxNoteSize
+			f.lib.mu.Unlock()
 			info, statErr := os.Stat(f.lib.FullPath(f.rel))
-			if statErr == nil && info.Size() > f.lib.Config.MaxNoteSize {
+			if statErr == nil && info.Size() > maxNoteSize {
 				if f.isNew {
 					if rmErr := os.Remove(f.lib.FullPath(f.rel)); rmErr != nil {
 						fmt.Fprintf(os.Stderr, "YinMo: WebDAV oversized note cleanup failed: %v\n", rmErr)
@@ -301,14 +304,6 @@ func (s *Server) newDavHandler() http.Handler {
 		} else if r.Method == "LOCK" {
 			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		}
-		// RFC 4918 §9.1: servers MAY reject Depth:infinity PROPFIND requests.
-		// An unlimited depth traversal over a large note library can generate a
-		// multi-megabyte response with no server-side bound; we reject it to
-		// prevent authenticated DoS. Depth:0 and Depth:1 are always accepted.
-		if r.Method == "PROPFIND" && r.Header.Get("Depth") == "infinity" {
-			http.Error(w, "Depth: infinity is not supported", http.StatusForbidden)
-			return
-		}
 
 		ip := davClientIP(r)
 
@@ -344,6 +339,16 @@ func (s *Server) newDavHandler() http.Handler {
 				return
 			}
 			clearAuthFailures(ip)
+		}
+		// RFC 4918 §9.1: servers MAY reject Depth:infinity PROPFIND requests.
+		// An unlimited depth traversal over a large note library can generate a
+		// multi-megabyte response with no server-side bound; we reject it to
+		// prevent authenticated DoS. Depth:0 and Depth:1 are always accepted.
+		// Check is placed after authentication so unauthenticated clients cannot
+		// probe server behaviour via the response status code.
+		if r.Method == "PROPFIND" && strings.EqualFold(r.Header.Get("Depth"), "infinity") {
+			http.Error(w, "Depth: infinity is not supported", http.StatusForbidden)
+			return
 		}
 		// Reject WebDAV access when server-side encryption is enabled.
 		// Files on disk contain ENC1-prefixed ciphertext unreadable by third-party

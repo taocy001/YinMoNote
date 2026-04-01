@@ -21,6 +21,10 @@ services:
       # SYNC_COMMIT=1: commit every note save immediately (no 30-second batch delay)
       # so that E2E history tests can read git entries right after manualSave().
       - SYNC_COMMIT=1
+      # E2E_RESET_AUTH=1: register POST /api/test/reset-auth so the E2E suite can
+      # restore open/keyless state after password-mode tests without a Bearer token.
+      # Never set this in production.
+      - E2E_RESET_AUTH=1
       - DATA_DIR=/data/notes
       - CONFIG_FILE=/data/config.json
       # TLS_SELF=1: serve HTTPS with a self-signed CA so Chrome (v130+) does not

@@ -103,10 +103,12 @@ func (s *Server) SetupRouter() *gin.Engine {
 	r.POST("/api/auth/setup", s.handleAuthSetup)
 
 	// POST /api/test/reset-auth clears SRPVerifier and SRPSalt unconditionally.
-	// Available ONLY when SYNC_COMMIT=1 (the E2E test environment variable).
-	// This lets the E2E test suite restore the server to open/keyless state after
-	// password-mode tests, without needing the current session token.
-	if os.Getenv("SYNC_COMMIT") == "1" {
+	// Available ONLY when E2E_RESET_AUTH=1 (a dedicated E2E test environment variable,
+	// separate from SYNC_COMMIT). This lets the E2E test suite restore the server to
+	// open/keyless state after password-mode tests without needing the current session
+	// token. Using a dedicated variable prevents SYNC_COMMIT=1 from inadvertently
+	// registering this unauthenticated endpoint in other test or CI environments.
+	if os.Getenv("E2E_RESET_AUTH") == "1" {
 		r.POST("/api/test/reset-auth", s.handleTestResetAuth)
 	}
 
@@ -592,9 +594,12 @@ func (s *Server) handleUpload(c *gin.Context) {
 			return
 		}
 	}
-	// Reset reader to beginning for SaveAsset
+	// Reset reader to beginning for SaveAsset.
 	if seeker, ok := file.(io.Seeker); ok {
-		seeker.Seek(0, io.SeekStart)
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			c.JSON(500, gin.H{"error": "seek_failed"})
+			return
+		}
 	}
 	name := time.Now().Format("20060102") + randomString(16) + ext
 	if err := s.Library.SaveAsset(name, file); err != nil {
@@ -683,7 +688,10 @@ func (s *Server) handleOverwriteAsset(c *gin.Context) {
 		}
 	}
 	if seeker, ok := file.(io.Seeker); ok {
-		seeker.Seek(0, io.SeekStart)
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			c.JSON(500, gin.H{"error": "seek_failed"})
+			return
+		}
 	}
 	if err := s.Library.SaveAsset(name, file); err != nil {
 		c.JSON(500, gin.H{"error": "save_failed"})
@@ -1077,27 +1085,25 @@ func (s *Server) handleAuthSetup(c *gin.Context) {
 		}
 	}
 
-	// Persist to disk before updating in-memory state.
-	oldSalt := s.Library.Config.SRPSalt
-	oldVerifier := s.Library.Config.SRPVerifier
-	s.Library.Config.SRPSalt = req.SRPSalt
-	s.Library.Config.SRPVerifier = req.SRPVerifier
-	cfg := s.Library.Config
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	// Snapshot config under the lock, then release before disk I/O.
+	cfgCopy := s.Library.Config
+	s.Library.mu.Unlock()
+
+	cfgCopy.SRPSalt = req.SRPSalt
+	cfgCopy.SRPVerifier = req.SRPVerifier
+	data, err := json.MarshalIndent(cfgCopy, "", "  ")
 	if err != nil {
-		s.Library.Config.SRPSalt = oldSalt
-		s.Library.Config.SRPVerifier = oldVerifier
-		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "marshal_failed"})
 		return
 	}
 	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
-		s.Library.Config.SRPSalt = oldSalt
-		s.Library.Config.SRPVerifier = oldVerifier
-		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "write_failed"})
 		return
 	}
+	// Update in-memory config after successful disk write.
+	s.Library.mu.Lock()
+	s.Library.Config.SRPSalt = req.SRPSalt
+	s.Library.Config.SRPVerifier = req.SRPVerifier
 	s.Library.mu.Unlock()
 
 	// Invalidate all existing sessions whenever auth is changed or cleared.
@@ -1232,19 +1238,23 @@ func (s *Server) handleWebDAVRevokeToken(c *gin.Context) {
 }
 
 func (s *Server) persistWebDAVTokenHash(hash string) error {
+	// Snapshot config under the lock, then release before disk I/O.
 	s.Library.mu.Lock()
-	defer s.Library.mu.Unlock()
-	oldHash := s.Library.Config.WebDAVTokenHash
-	s.Library.Config.WebDAVTokenHash = hash
-	data, err := json.MarshalIndent(s.Library.Config, "", "  ")
+	cfgCopy := s.Library.Config
+	s.Library.mu.Unlock()
+
+	cfgCopy.WebDAVTokenHash = hash
+	data, err := json.MarshalIndent(cfgCopy, "", "  ")
 	if err != nil {
-		s.Library.Config.WebDAVTokenHash = oldHash
 		return err
 	}
 	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
-		s.Library.Config.WebDAVTokenHash = oldHash
 		return err
 	}
+	// Update in-memory config after successful disk write.
+	s.Library.mu.Lock()
+	s.Library.Config.WebDAVTokenHash = hash
+	s.Library.mu.Unlock()
 	return nil
 }
 
@@ -1252,27 +1262,26 @@ func (s *Server) persistWebDAVTokenHash(hash string) error {
 // Allows E2E teardown to restore open/keyless access after password-mode tests
 // without needing the current session token.
 func (s *Server) handleTestResetAuth(c *gin.Context) {
+	// Snapshot config under the lock, then release before disk I/O.
 	s.Library.mu.Lock()
-	oldSalt := s.Library.Config.SRPSalt
-	oldVerifier := s.Library.Config.SRPVerifier
-	s.Library.Config.SRPSalt = ""
-	s.Library.Config.SRPVerifier = ""
-	cfg := s.Library.Config
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	cfgCopy := s.Library.Config
+	s.Library.mu.Unlock()
+
+	cfgCopy.SRPSalt = ""
+	cfgCopy.SRPVerifier = ""
+	data, err := json.MarshalIndent(cfgCopy, "", "  ")
 	if err != nil {
-		s.Library.Config.SRPSalt = oldSalt
-		s.Library.Config.SRPVerifier = oldVerifier
-		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "marshal_failed"})
 		return
 	}
 	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
-		s.Library.Config.SRPSalt = oldSalt
-		s.Library.Config.SRPVerifier = oldVerifier
-		s.Library.mu.Unlock()
 		c.JSON(500, gin.H{"error": "write_failed"})
 		return
 	}
+	// Update in-memory config after successful disk write.
+	s.Library.mu.Lock()
+	s.Library.Config.SRPSalt = ""
+	s.Library.Config.SRPVerifier = ""
 	s.Library.mu.Unlock()
 
 	// Invalidate all active Bearer tokens on reset.

@@ -17,7 +17,7 @@ export const BASE_URL = process.env.APP_URL ?? 'http://localhost:8080'
  * Clear the server-side SRPVerifier so subsequent keyless tests can reach
  * the API without a Bearer token.
  *
- * Uses POST /api/test/reset-auth (available only when SYNC_COMMIT=1, i.e. the
+ * Uses POST /api/test/reset-auth (available only when E2E_RESET_AUTH=1, i.e. the
  * E2E Docker environment).  Falls back to the token-authenticated
  * POST /api/auth/setup path when the test endpoint is absent.
  *

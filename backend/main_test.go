@@ -2273,8 +2273,8 @@ func TestHandleAuthSetup(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
-	t.Run("SYNC_COMMIT=1 enables POST /api/test/reset-auth", func(t *testing.T) {
-		t.Setenv("SYNC_COMMIT", "1")
+	t.Run("E2E_RESET_AUTH=1 enables POST /api/test/reset-auth", func(t *testing.T) {
+		t.Setenv("E2E_RESET_AUTH", "1")
 		lib, r, _ := setupSRPLib(t, password)
 
 		req, _ := http.NewRequest("POST", "/api/test/reset-auth", nil)
@@ -2288,7 +2288,7 @@ func TestHandleAuthSetup(t *testing.T) {
 		lib.mu.Unlock()
 	})
 
-	t.Run("without SYNC_COMMIT POST /api/test/reset-auth does not clear verifier", func(t *testing.T) {
+	t.Run("without E2E_RESET_AUTH POST /api/test/reset-auth does not clear verifier", func(t *testing.T) {
 		lib, r, _ := setupSRPLib(t, password)
 		savedVerifier := func() string {
 			lib.mu.Lock()
@@ -2301,7 +2301,7 @@ func TestHandleAuthSetup(t *testing.T) {
 		r.ServeHTTP(w, req)
 
 		lib.mu.Lock()
-		assert.Equal(t, savedVerifier, lib.Config.SRPVerifier, "verifier must not be cleared without SYNC_COMMIT")
+		assert.Equal(t, savedVerifier, lib.Config.SRPVerifier, "verifier must not be cleared without E2E_RESET_AUTH")
 		lib.mu.Unlock()
 	})
 
@@ -2543,6 +2543,53 @@ func TestSRPHandshakeSecurity(t *testing.T) {
 		r.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("srpSessions cap exhaustion returns 503 without recording auth failure", func(t *testing.T) {
+		// Fill srpSessions up to the 200-entry cap by injecting entries directly,
+		// then confirm that /srp/init returns 503 with "service_unavailable" and
+		// that the IP failure counter is NOT incremented (so the caller is not
+		// penalised for the server's capacity state).
+		_, r, _ := setupSRPLib(t, password)
+
+		srpSessionsMu.Lock()
+		for i := 0; i < 200; i++ {
+			key := fmt.Sprintf("fake_session_%04d", i)
+			srpSessions[key] = &srpSession{expireAt: time.Now().Add(5 * time.Minute)}
+		}
+		srpSessionsMu.Unlock()
+		t.Cleanup(func() {
+			srpSessionsMu.Lock()
+			for i := 0; i < 200; i++ {
+				delete(srpSessions, fmt.Sprintf("fake_session_%04d", i))
+			}
+			srpSessionsMu.Unlock()
+		})
+
+		// Capture failure count before the request.
+		authFailuresMu.Lock()
+		countBefore := 0
+		if e := authFailures["127.0.0.1"]; e != nil {
+			countBefore = e.count
+		}
+		authFailuresMu.Unlock()
+
+		body, _ := json.Marshal(map[string]string{"A": hex.EncodeToString(pad256(srpG))})
+		req, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code, "cap exceeded must return 503")
+		assert.Contains(t, w.Body.String(), "service_unavailable")
+
+		authFailuresMu.Lock()
+		countAfter := 0
+		if e := authFailures["127.0.0.1"]; e != nil {
+			countAfter = e.count
+		}
+		authFailuresMu.Unlock()
+		assert.Equal(t, countBefore, countAfter, "capacity cap must not increment IP failure counter")
 	})
 
 	t.Run("GET /api/config never exposes SRPSalt or SRPVerifier", func(t *testing.T) {
@@ -2860,6 +2907,39 @@ func TestDavAuth(t *testing.T) {
 		assert.Equal(t, 207, w.Code)
 	})
 
+	t.Run("403 on PROPFIND Depth:infinity (case-insensitive) after auth", func(t *testing.T) {
+		_, davH, token := newSrvWithToken(t)
+
+		// Lowercase "infinity" — must be rejected after successful auth.
+		req, _ := http.NewRequest("PROPFIND", "/dav/", nil)
+		req.Header.Set("Depth", "infinity")
+		req.SetBasicAuth("u", token)
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusForbidden, w.Code, "Depth:infinity must return 403")
+
+		// Mixed case "Infinity" — EqualFold must catch this too.
+		req2, _ := http.NewRequest("PROPFIND", "/dav/", nil)
+		req2.Header.Set("Depth", "Infinity")
+		req2.SetBasicAuth("u", token)
+		w2 := httptest.NewRecorder()
+		davH.ServeHTTP(w2, req2)
+		assert.Equal(t, http.StatusForbidden, w2.Code, "Depth:Infinity (mixed case) must return 403")
+	})
+
+	t.Run("PROPFIND Depth:infinity without auth returns 401 not 403", func(t *testing.T) {
+		// The check is now after auth, so an unauthenticated Depth:infinity request
+		// must be rejected with 401 (auth failure), not 403 (depth check).
+		_, davH, _ := newSrvWithToken(t)
+		req, _ := http.NewRequest("PROPFIND", "/dav/", nil)
+		req.Header.Set("Depth", "infinity")
+		// No credentials.
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnauthorized, w.Code,
+			"Depth:infinity without auth must return 401 (auth check comes first)")
+	})
+
 	t.Run("brute-force: failure counter increments and clears on correct token", func(t *testing.T) {
 		_, davH, token := newSrvWithToken(t)
 
@@ -2918,6 +2998,22 @@ func TestDavClientIP(t *testing.T) {
 		req.RemoteAddr = "10.0.0.1:4321"
 		req.Header.Set("X-Forwarded-For", "203.0.113.5")
 		assert.Equal(t, "10.0.0.1", davClientIP(req))
+	})
+
+	t.Run("trailing comma XFF from loopback falls back to RemoteAddr", func(t *testing.T) {
+		// "203.0.113.5," — rightmost segment is empty after trimming; must not
+		// return "" which would bucket all such requests under the same empty key.
+		req, _ := http.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "127.0.0.1:4321"
+		req.Header.Set("X-Forwarded-For", "203.0.113.5,")
+		assert.Equal(t, "127.0.0.1", davClientIP(req))
+	})
+
+	t.Run("whitespace-only XFF segment from loopback falls back to RemoteAddr", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "127.0.0.1:4321"
+		req.Header.Set("X-Forwarded-For", "203.0.113.5,   ")
+		assert.Equal(t, "127.0.0.1", davClientIP(req))
 	})
 }
 

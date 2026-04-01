@@ -68,8 +68,12 @@ type NoteLibrary struct {
 // clamped back to safe defaults before being written back — this prevents a
 // manually-edited config from destabilising the server.
 func NewNoteLibrary(dataDir, assetsDir, configPath string) (*NoteLibrary, error) {
-	os.MkdirAll(dataDir, 0700)
-	os.MkdirAll(filepath.Join(dataDir, assetsDir), 0700)
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, fmt.Errorf("create data directory: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, assetsDir), 0700); err != nil {
+		return nil, fmt.Errorf("create assets directory: %w", err)
+	}
 	config := DefaultConfig()
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err := json.Unmarshal(data, &config); err != nil {

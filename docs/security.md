@@ -114,7 +114,7 @@ WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
 
 所有认证端点（API / Basic Auth / MCP / WebDAV）共享同一套 IP 级防护：
 - 3 次以上连续失败 → 每次增加 500ms 延迟（上限 5s）
-- 并发认证延迟限流：同时进行的延迟最多 20 个（信号量），超过直接拒绝
+- 并发认证延迟限流：同时进行的延迟最多 20 个（信号量），超过上限时**跳过本次 sleep**（延迟绕过），但 `recordAuthFailure` 仍然执行，累计失败计数不受影响
 - `authFailures` 计数 30 分钟无活动后清除该 IP
 
 ---
@@ -173,3 +173,4 @@ WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
 | Bearer Token 在无 HTTPS 时明文传输 | 📝 已记录 | 强烈建议搭配内置 TLS 或 Nginx TLS 或 Tailscale 使用，不要将裸 HTTP 暴露在公网 |
 | authFailures 按 IP 空闲超时 | 📝 已记录 | 30 分钟无活动后清除该 IP 计数；清除后该 IP 可再次触发延迟计数，单用户私有部署场景可接受 |
 | IndexedDB 缓存在非正常退出时可能残留 | 📝 已记录 | 加密模式下 lockLibrary 清空缓存，但直接关闭标签页时 `beforeunload` 不保证执行；缓存存储的是 ENC1 密文而非明文，风险可控 |
+| `E2E_RESET_AUTH=1` 开放无认证重置端点 | 📝 已记录 | `E2E_RESET_AUTH=1` 时注册 `POST /api/test/reset-auth`，无需 Bearer token 即可清除 SRP 凭据；该变量仅供 E2E 测试环境使用，**严禁在生产部署中设置**；端点独立于 `SYNC_COMMIT`，不会被意外激活 |

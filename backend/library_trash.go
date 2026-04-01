@@ -85,20 +85,24 @@ func (l *NoteLibrary) purgeExpiredTrash() {
 	}
 
 	// Delete files — validate each ID to prevent path-traversal.
+	// Track only successfully deleted IDs so that metadata (titles/tags) is only
+	// cleared for files that were actually removed from disk.
+	var deletedIDs []string
 	for _, id := range purged {
 		if !validFileRegex.MatchString(id) {
 			continue
 		}
 		if err := os.Remove(filepath.Join(l.DataDir, id)); err != nil && !os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "[YinMo] purgeExpiredTrash: failed to remove %q: %v\n", id, err)
-			continue // skip markPending if file removal failed
+			continue // skip markPending and metadata cleanup if file removal failed
 		}
 		l.markPending(id) // notify git so the deletion is committed
+		deletedIDs = append(deletedIDs, id)
 	}
 
-	// Also remove purged IDs from titles and tags maps if present.
-	purgedSet := make(map[string]bool, len(purged))
-	for _, id := range purged {
+	// Only remove titles/tags for files that were actually deleted from disk.
+	purgedSet := make(map[string]bool, len(deletedIDs))
+	for _, id := range deletedIDs {
 		purgedSet[id] = true
 	}
 	if titlesRaw, ok := generic["titles"]; ok {
