@@ -61,7 +61,7 @@ func extractNoteTitle(path string) string {
 		if line == "" {
 			continue
 		}
-		return strings.TrimLeft(strings.TrimPrefix(line, "#"), " ")
+		return strings.TrimLeft(line, "# ")
 	}
 	return ""
 }

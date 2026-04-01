@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/net/webdav"
 )
@@ -19,14 +20,147 @@ import (
 // It wraps os.ErrPermission so the webdav package translates it to 403 Forbidden.
 type davQuotaError struct{ reason string }
 
-func (e *davQuotaError) Error() string  { return "quota exceeded: " + e.reason }
+func (e *davQuotaError) Error() string      { return "quota exceeded: " + e.reason }
 func (e *davQuotaError) Is(target error) bool { return target == os.ErrPermission }
-func (e *davQuotaError) Unwrap() error  { return os.ErrPermission }
+func (e *davQuotaError) Unwrap() error       { return os.ErrPermission }
+
+// ── Title virtualisation layer ────────────────────────────────────────────────
+
+// davNameMap holds a bidirectional mapping between canonical-ID filenames and
+// their human-readable title names for root-level .md files.
+// Only files whose names match validFileRegex are translated; non-canonical .md
+// files (e.g. "My Note.md" written by Obsidian) are exposed unchanged.
+type davNameMap struct {
+	titleToID map[string]string // "数据中心网络.md" → "20260329g6k7v44jm13kq9av.md"
+	idToTitle map[string]string // "20260329g6k7v44jm13kq9av.md" → "数据中心网络.md"
+}
+
+// davTitleFileInfo wraps an os.FileInfo but returns a different (title-based) name.
+// Used by davDirFile.Readdir to present canonical-ID notes under readable filenames.
+type davTitleFileInfo struct {
+	os.FileInfo
+	name string
+}
+
+func (f *davTitleFileInfo) Name() string { return f.name }
+
+// davSanitizeTitle converts a note title to a safe filename stem by replacing
+// characters that are invalid or problematic on common filesystems.
+func davSanitizeTitle(title string) string {
+	if title == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range title {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', 0:
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	s := strings.TrimSpace(b.String())
+	const maxBytes = 200
+	if len(s) > maxBytes {
+		s = s[:maxBytes]
+		for !utf8.ValidString(s) && len(s) > 0 {
+			s = s[:len(s)-1]
+		}
+	}
+	return s
+}
+
+// buildTitleMap constructs the bidirectional ID↔title mapping by scanning the library.
+// It is called on every write/stat/readdir operation; cost is one os.ReadDir + up to
+// MaxTotalNotes × 512-byte file peeks, which is fast enough for interactive use.
+func (dfs *davFileSystem) buildTitleMap() *davNameMap {
+	m := &davNameMap{
+		titleToID: make(map[string]string),
+		idToTitle: make(map[string]string),
+	}
+	notes, err := dfs.lib.ListNotes()
+	if err != nil {
+		return m
+	}
+	seen := make(map[string]int) // sanitized base → count of collisions
+	for _, note := range notes {
+		if !validFileRegex.MatchString(note.Name) {
+			continue // non-canonical filename: shown as-is, no translation needed
+		}
+		base := davSanitizeTitle(note.Title)
+		if base == "" {
+			base = strings.TrimSuffix(note.Name, ".md")
+		}
+		n := seen[base]
+		seen[base]++
+		var davName string
+		if n == 0 {
+			davName = base + ".md"
+		} else {
+			davName = fmt.Sprintf("%s (%d).md", base, n+1)
+		}
+		m.titleToID[davName] = note.Name
+		m.idToTitle[note.Name] = davName
+	}
+	return m
+}
+
+// translateToID converts a root-level title-based .md path to the corresponding
+// canonical-ID path, or returns the original path when no mapping exists.
+// Subdirectory paths and non-.md names are always returned unchanged.
+func (m *davNameMap) translateToID(name string) string {
+	rel := strings.TrimPrefix(name, "/")
+	if strings.ContainsRune(rel, '/') || !strings.HasSuffix(rel, ".md") {
+		return name // subdirectory path or non-.md: pass through
+	}
+	if id, ok := m.titleToID[rel]; ok {
+		return "/" + id
+	}
+	return name // not in map (new file or already canonical): pass through
+}
+
+// updateNoteH1 replaces the first non-empty line of the note file (its title line)
+// with a new H1 heading formed from newTitle. Used by Rename to implement
+// title-rename via content update rather than a file-system rename.
+// If the file is encrypted (ENC1: prefix), the call is a no-op.
+func (dfs *davFileSystem) updateNoteH1(idFilename, newTitle string) error {
+	path := dfs.lib.FullPath(idFilename)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(raw)
+	if strings.HasPrefix(content, "ENC1:") {
+		return os.ErrPermission // cannot rewrite encrypted content
+	}
+	lines := strings.Split(content, "\n")
+	replaced := false
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			lines[i] = "# " + newTitle
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append([]string{"# " + newTitle}, lines...)
+	}
+	if err := atomicWriteFile(path, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+		return err
+	}
+	dfs.lib.markPending(idFilename)
+	dfs.lib.reconcilePending.Store(true)
+	return nil
+}
+
+// ── davFileSystem ─────────────────────────────────────────────────────────────
 
 // davFileSystem wraps webdav.Dir to:
 //  1. Block access to internal YinMoNote files (_structure.json, hidden files).
 //  2. Filter blocked entries from directory listings so clients never see them.
-//  3. Queue written/deleted files for git commit via markPending.
+//  3. Translate canonical-ID note filenames to human-readable title names so that
+//     WebDAV clients (e.g. Obsidian) see "数据中心网络.md" instead of "20260329…md".
+//  4. Queue written/deleted files for git commit via markPending.
 type davFileSystem struct {
 	inner webdav.Dir
 	lib   *NoteLibrary
@@ -43,13 +177,22 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 	if !dfs.allowed(name) {
 		return nil, os.ErrPermission
 	}
-	// For new .md files (O_CREATE and file absent), enforce the total-note-count quota
-	// BEFORE inner.OpenFile creates the file on disk. This prevents the race where
-	// inner.OpenFile creates the file and the subsequent stat finds it already present.
-	// Size quota is deferred to Close (the content is not yet known at open time).
+
+	// ── Title→ID translation for root-level .md files ─────────────────────────
+	// Build the mapping on every open so we always have a fresh view. This covers
+	// reads (GET, PROPFIND stat), writes (PUT existing), and directory opens.
+	rel := strings.TrimPrefix(name, "/")
+	isRootMD := !strings.ContainsRune(rel, '/') && strings.HasSuffix(rel, ".md")
+
+	if isRootMD {
+		m := dfs.buildTitleMap()
+		name = m.translateToID(name)
+		rel = strings.TrimPrefix(name, "/")
+	}
+
+	// ── Quota check for new canonical .md files ───────────────────────────────
 	isNew := false
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
-		rel := strings.TrimPrefix(name, "/")
 		if flag&os.O_CREATE != 0 && strings.HasSuffix(rel, ".md") {
 			if _, statErr := os.Stat(dfs.lib.FullPath(rel)); os.IsNotExist(statErr) {
 				isNew = true
@@ -59,18 +202,24 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 			}
 		}
 	}
+
 	f, err := dfs.inner.OpenFile(ctx, name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
-	// Wrap directory opens to filter blocked entries from PROPFIND listings.
+
+	// Wrap directory opens to filter blocked entries and attach the title map.
 	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
-		return &davDirFile{File: f}, nil
+		// Only pass the title map for the root directory listing.
+		var m *davNameMap
+		if rel == "" || rel == "." {
+			m = dfs.buildTitleMap()
+		}
+		return &davDirFile{File: f, m: m}, nil
 	}
+
 	// Wrap write-mode opens to queue a git commit when the file is closed.
-	// O_TRUNC pre-sets written=true so zero-byte truncation is also committed.
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
-		rel := strings.TrimPrefix(name, "/")
 		truncated := flag&os.O_TRUNC != 0
 		return &davCommitFile{File: f, lib: dfs.lib, rel: rel, written: truncated, isNew: isNew}, nil
 	}
@@ -81,6 +230,8 @@ func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
 	if !dfs.allowed(name) {
 		return os.ErrPermission
 	}
+	m := dfs.buildTitleMap()
+	name = m.translateToID(name)
 	err := dfs.inner.RemoveAll(ctx, name)
 	if err == nil {
 		rel := strings.TrimPrefix(name, "/")
@@ -98,10 +249,29 @@ func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) e
 	if !dfs.allowed(oldName) || !dfs.allowed(newName) {
 		return os.ErrPermission
 	}
-	err := dfs.inner.Rename(ctx, oldName, newName)
+
+	m := dfs.buildTitleMap()
+	oldTranslated := m.translateToID(oldName)
+	oldRel := strings.TrimPrefix(oldTranslated, "/")
+	newRel := strings.TrimPrefix(newName, "/")
+
+	// Title-rename: old path maps to a canonical ID and new path is a root-level .md.
+	// Implement as an H1 content update rather than a file-system rename so the
+	// canonical ID is preserved.
+	isOldCanonical := validFileRegex.MatchString(oldRel)
+	isNewRootMD := !strings.ContainsRune(newRel, '/') && strings.HasSuffix(newRel, ".md")
+
+	if isOldCanonical && isNewRootMD {
+		newTitle := davSanitizeTitle(strings.TrimSuffix(newRel, ".md"))
+		if newTitle == "" {
+			newTitle = strings.TrimSuffix(newRel, ".md")
+		}
+		return dfs.updateNoteH1(oldRel, newTitle)
+	}
+
+	// Standard rename (non-canonical source, or subdirectory move).
+	err := dfs.inner.Rename(ctx, oldTranslated, newName)
 	if err == nil {
-		oldRel := strings.TrimPrefix(oldName, "/")
-		newRel := strings.TrimPrefix(newName, "/")
 		dfs.lib.markPending(oldRel)
 		dfs.lib.markPending(newRel)
 		if strings.HasSuffix(oldRel, ".md") || strings.HasSuffix(newRel, ".md") {
@@ -118,7 +288,18 @@ func (dfs *davFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, e
 		// than aborting the response with "Internal Server Error".
 		return nil, os.ErrPermission
 	}
-	return dfs.inner.Stat(ctx, name)
+	m := dfs.buildTitleMap()
+	translated := m.translateToID(name)
+	info, err := dfs.inner.Stat(ctx, translated)
+	if err != nil {
+		return nil, err
+	}
+	// If we translated the name, wrap FileInfo to return the title-based name.
+	if translated != name {
+		rel := strings.TrimPrefix(name, "/")
+		return &davTitleFileInfo{FileInfo: info, name: rel}, nil
+	}
+	return info, nil
 }
 
 // isBlockedSegment returns true for filename segments that must never be
@@ -153,11 +334,13 @@ func isBlockedSegment(seg string) bool {
 //
 // Path depth: at most 5 segments are allowed, supporting WebDAV clients that
 // use a base directory (e.g. Obsidian Remotely Save with vault root "test"):
-//   depth 1 — root files            e.g. "note.md"
-//   depth 2 — one subfolder         e.g. "assets/image.png", "test/note.md"
-//   depth 3 — two subfolders        e.g. "test/Daily Notes/note.md"
-//   depth 4 — three subfolders      e.g. "test/Projects/Work/note.md"
-//   depth 5 — four subfolders       e.g. "test/A/B/C/note.md"
+//
+//	depth 1 — root files            e.g. "note.md"
+//	depth 2 — one subfolder         e.g. "assets/image.png", "test/note.md"
+//	depth 3 — two subfolders        e.g. "test/Daily Notes/note.md"
+//	depth 4 — three subfolders      e.g. "test/Projects/Work/note.md"
+//	depth 5 — four subfolders       e.g. "test/A/B/C/note.md"
+//
 // Paths deeper than 5 segments are rejected to bound directory tree growth.
 func (dfs *davFileSystem) allowed(name string) bool {
 	segments := strings.Split(strings.TrimPrefix(name, "/"), "/")
@@ -183,10 +366,13 @@ func (dfs *davFileSystem) allowed(name string) bool {
 
 // ── davDirFile ────────────────────────────────────────────────────────────────
 
-// davDirFile wraps a directory webdav.File and filters out blocked entries
-// (_structure.json, hidden files) from Readdir so clients never see them.
+// davDirFile wraps a directory webdav.File and:
+//  1. Filters out blocked entries (_structure.json, hidden files) from Readdir.
+//  2. Translates canonical-ID note filenames to human-readable title names
+//     when m is non-nil (root directory only).
 type davDirFile struct {
 	webdav.File
+	m *davNameMap // non-nil only for root directory; translates ID→title in listings
 }
 
 func (f *davDirFile) Readdir(count int) ([]os.FileInfo, error) {
@@ -195,6 +381,13 @@ func (f *davDirFile) Readdir(count int) ([]os.FileInfo, error) {
 	for _, e := range entries {
 		if isBlockedSegment(e.Name()) {
 			continue
+		}
+		// Translate canonical-ID note filenames to title names for root listings.
+		if f.m != nil && !e.IsDir() {
+			if title, ok := f.m.idToTitle[e.Name()]; ok {
+				filtered = append(filtered, &davTitleFileInfo{FileInfo: e, name: title})
+				continue
+			}
 		}
 		filtered = append(filtered, e)
 	}
