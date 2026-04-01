@@ -948,13 +948,21 @@ const handleUnlock = async () => {
           if (!serverInitialized.value) {
             // First-time password setup: register SRP verifier with the server.
             // After this, subsequent logins use SRP handshake only (no re-setup needed).
-            const srpSaltBytes = window.crypto.getRandomValues(new Uint8Array(16))
-            const srpSaltB64 = btoa(String.fromCharCode(...srpSaltBytes))
-            const verifierHex = await crypto.srpComputeVerifier(srpSaltBytes, tokenInput)
-            await axios.post(`${API_BASE}/auth/setup`, {
-              srpSalt: srpSaltB64,
-              srpVerifier: verifierHex,
-            })
+            // If setup returns 401 it means the server already has a verifier (race: the
+            // onMounted auth/status call was delayed and hadn't set serverInitialized yet).
+            // Treat 401 as "already initialized" and fall through to the SRP handshake.
+            try {
+              const srpSaltBytes = window.crypto.getRandomValues(new Uint8Array(16))
+              const srpSaltB64 = btoa(String.fromCharCode(...srpSaltBytes))
+              const verifierHex = await crypto.srpComputeVerifier(srpSaltBytes, tokenInput)
+              await axios.post(`${API_BASE}/auth/setup`, {
+                srpSalt: srpSaltB64,
+                srpVerifier: verifierHex,
+              })
+            } catch (setupErr: any) {
+              if (setupErr?.response?.status !== 401) throw setupErr
+              // 401 → server verifier already set; proceed to SRP handshake below.
+            }
             serverInitialized.value = true
           }
           const token = await crypto.deriveSessionToken(tokenInput, API_BASE)

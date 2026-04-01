@@ -1034,11 +1034,10 @@ func (s *Server) apiAuth() gin.HandlerFunc {
 // pbkdf2Salt is returned here (not via GET /api/config) so new devices can
 // import it before performing key derivation, without needing a Bearer token.
 func (s *Server) handleAuthStatus(c *gin.Context) {
-	// Apply the shared auth delay so this endpoint shares the same brute-force
-	// protection as all other auth-adjacent endpoints. Without this, an attacker
-	// could probe pbkdf2Salt (returned here) at unlimited speed while all other
-	// auth endpoints are protected.
-	applyAuthDelay(c.ClientIP())
+	// No auth delay here: pbkdf2Salt and initialized are not brute-forceable values
+	// (pbkdf2Salt is fixed per-user; initialized is public via the login UI itself).
+	// Applying applyAuthDelay caused a race: if the user's IP had accumulated failures
+	// the delay could exceed the time before handleUnlock ran, leaving serverInitialized=false.
 	s.Library.mu.Lock()
 	initialized := s.Library.Config.SRPVerifier != ""
 	pbkdf2Salt := s.Library.Config.Pbkdf2Salt
