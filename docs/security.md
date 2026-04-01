@@ -86,11 +86,12 @@
 | HTTP Basic Auth | `AUTH_USER` 环境变量 | 环境变量指定用户名密码 |
 | 开放访问 | 以上均未配置 | Keyless 模式，无认证 |
 
-Bearer token 存储于内存 `activeTokens` map（最多 1000 条），不持久化到磁盘。
+Bearer token 存储于内存两个同步 map（`activeTokens` + `activeTokenExpiry`，各限 1000 条），不持久化到磁盘。
 
 **容量限制行为**：
 - `srpSessions` 握手会话最多 200 条（5 分钟 TTL，每 2 分钟清理）。超过上限时 `/api/auth/srp/init` 返回 503，不计入 IP 失败计数，响应体为通用 `{"error":"service_unavailable"}`。
-- `activeTokens` Bearer token 最多 1000 条（24 小时 TTL，每 10 分钟清理）。超过上限时 `/api/auth/srp/verify` 返回 503，响应体同为 `{"error":"service_unavailable"}`。
+- `activeTokens` Bearer token 最多 1000 条（24 小时 TTL，每 10 分钟清理）。超过上限时 `/api/auth/srp/verify` 返回 503，响应体同为 `{"error":"service_unavailable"}`。额外有**每 IP 最多 `maxTokensPerIP`（10）条**的限制，防止单一 IP 耗尽全局 cap 导致所有用户无法登录的 DoS。
+- `GET /api/auth/status` 端点（用于跨设备密钥派生获取 pbkdf2Salt）同样受 `applyAuthDelay` 保护，与其他认证端点一致。
 - 两种 cap 均使用不透明错误消息，无法从外部区分"容量耗尽"与其他服务端错误，避免攻击者探测内部状态。
 
 ### 4.2 MCP 认证
@@ -169,7 +170,7 @@ WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
 | ~~WebAuthn challenge 全零~~ | ✅ 已修复 | 注册和断言均使用 `crypto.getRandomValues(new Uint8Array(32))` 生成随机 challenge |
 | git 历史保留历史明文 | 📝 已记录 | 开启 E2EE 之前保存的笔记版本永久保留明文历史；UI 已显示警告；彻底修复需清除 git 历史 |
 | batchUpdateEncryption 无原子性 | 📝 已记录 | 批量加密部分失败时服务端处于混合状态；已有失败计数提示和重试入口，无法彻底原子化 |
-| sessionWrapKey PBKDF2 10,000 次迭代 | 📝 已记录 | 已从 1,000 提升至 10,000 次；XSS 场景下 window.name 和 sessionStorage 均可被读取，迭代数的实际防护意义有限；主密钥的 non-extractable 是最终防线 |
+| sessionWrapKey PBKDF2 10,000 次迭代（固定盐） | 📝 已记录 | 已从 1,000 提升至 10,000 次；盐固定为 `'yinmo-session-wrap-v1'`（非随机）；XSS 场景下 window.name 和 sessionStorage 均可被读取，迭代数和固定盐的实际防护意义有限（代码注释已说明此权衡）；主密钥的 non-extractable 是最终防线 |
 | Bearer Token 在无 HTTPS 时明文传输 | 📝 已记录 | 强烈建议搭配内置 TLS 或 Nginx TLS 或 Tailscale 使用，不要将裸 HTTP 暴露在公网 |
 | authFailures 按 IP 空闲超时 | 📝 已记录 | 30 分钟无活动后清除该 IP 计数；清除后该 IP 可再次触发延迟计数，单用户私有部署场景可接受 |
 | IndexedDB 缓存在非正常退出时可能残留 | 📝 已记录 | 加密模式下 lockLibrary 清空缓存，但直接关闭标签页时 `beforeunload` 不保证执行；缓存存储的是 ENC1 密文而非明文，风险可控 |

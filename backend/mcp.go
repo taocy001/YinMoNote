@@ -528,8 +528,8 @@ func (s *Server) mcpGetStructure(id *json.RawMessage) *mcpResponse {
 	denied := map[string]bool{}
 	if policy.Enabled {
 		allStructureIDs := map[string]bool{}
-		for _, id := range st.Order {
-			allStructureIDs[id] = true
+		for _, noteID := range st.Order {
+			allStructureIDs[noteID] = true
 		}
 		for _, children := range st.ChildOrder {
 			for _, child := range children {
@@ -680,6 +680,14 @@ func (s *Server) mcpUpdateNote(id *json.RawMessage, filename, content string) *m
 	if _, err := os.Stat(s.Library.FullPath(filename)); os.IsNotExist(err) {
 		return mcpOK(id, errResult("note not found"))
 	}
+	// Refuse to overwrite a client-side encrypted note with plaintext.
+	// MCP clients operate without the user's decryption key; writing plaintext
+	// over an ENC1 ciphertext would silently destroy the encrypted content.
+	if existing, err := os.ReadFile(s.Library.FullPath(filename)); err == nil {
+		if strings.HasPrefix(string(existing), "ENC1:") {
+			return mcpOK(id, errResult("note is encrypted and cannot be updated via MCP"))
+		}
+	}
 	st := s.Library.loadMCPStructure()
 	_, _, access := s.mcpNoteAccess(filename, st)
 	if access != MCPAccessWrite {
@@ -721,19 +729,24 @@ func (s *Server) handleMCPRevokeToken(c *gin.Context) {
 }
 
 func (s *Server) persistMCPTokenHash(hash string) error {
+	// Pattern B: snapshot under mu, release, do disk I/O, re-acquire to update memory.
+	// Matches the pattern used by persistWebDAVTokenHash to avoid holding mu during I/O.
 	s.Library.mu.Lock()
-	defer s.Library.mu.Unlock()
-	oldHash := s.Library.Config.MCPTokenHash
-	s.Library.Config.MCPTokenHash = hash
-	data, err := json.MarshalIndent(s.Library.Config, "", "  ")
+	cfgCopy := s.Library.Config
+	s.Library.mu.Unlock()
+
+	cfgCopy.MCPTokenHash = hash
+	data, err := json.MarshalIndent(cfgCopy, "", "  ")
 	if err != nil {
-		s.Library.Config.MCPTokenHash = oldHash
 		return err
 	}
 	if err := atomicWriteFile(s.Library.ConfigPath, data, 0600); err != nil {
-		s.Library.Config.MCPTokenHash = oldHash
 		return err
 	}
+
+	s.Library.mu.Lock()
+	s.Library.Config.MCPTokenHash = hash
+	s.Library.mu.Unlock()
 	return nil
 }
 

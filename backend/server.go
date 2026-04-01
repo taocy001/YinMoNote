@@ -867,9 +867,17 @@ var (
 	// activeTokens holds the set of Bearer tokens issued by the SRP handshake.
 	// Tokens are stored as their raw string; each token is a 32-byte random value
 	// encoded as base64url. The map is cleared when the password is changed or reset.
-	activeTokens       = make(map[string]struct{})
-	activeTokenExpiry  = make(map[string]time.Time) // TTL: 24 hours from issue
-	activeTokensMu     sync.Mutex
+	activeTokens      = make(map[string]struct{})
+	activeTokenExpiry = make(map[string]time.Time)  // TTL: 24 hours from issue
+	activeTokensIP    = make(map[string]string)      // token → issuing IP (for per-IP eviction)
+	activeTokensPerIP = make(map[string]int)          // IP → count of live tokens
+	activeTokensMu    sync.Mutex
+
+	// maxTokensPerIP limits how many concurrent Bearer tokens a single IP address
+	// may hold. Prevents a single actor from filling the global 1000-token cap and
+	// locking all users out (DoS). A private single-user deployment rarely needs
+	// more than a handful of concurrent sessions.
+	maxTokensPerIP = 10
 )
 
 func init() {
@@ -877,8 +885,9 @@ func init() {
 	// This prevents unbounded map growth from rotating-IP attacks while preserving
 	// the delay for persistent attackers using the same IP.
 	go func() {
-		for {
-			time.Sleep(5 * time.Minute)
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
 			cutoff := time.Now().Add(-30 * time.Minute)
 			authFailuresMu.Lock()
 			for ip, e := range authFailures {
@@ -891,16 +900,25 @@ func init() {
 	}()
 
 	// Evict SRP Bearer tokens that have exceeded their 24-hour TTL.
-	// This bounds the activeTokens map size on long-running servers.
+	// Also maintains the per-IP counter (activeTokensPerIP) so the DoS cap
+	// accurately reflects only live tokens.
 	go func() {
-		for {
-			time.Sleep(10 * time.Minute)
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
 			now := time.Now()
 			activeTokensMu.Lock()
 			for tok, exp := range activeTokenExpiry {
 				if now.After(exp) {
 					delete(activeTokens, tok)
 					delete(activeTokenExpiry, tok)
+					if ip, ok := activeTokensIP[tok]; ok {
+						delete(activeTokensIP, tok)
+						activeTokensPerIP[ip]--
+						if activeTokensPerIP[ip] <= 0 {
+							delete(activeTokensPerIP, ip)
+						}
+					}
 				}
 			}
 			activeTokensMu.Unlock()
@@ -1016,6 +1034,11 @@ func (s *Server) apiAuth() gin.HandlerFunc {
 // pbkdf2Salt is returned here (not via GET /api/config) so new devices can
 // import it before performing key derivation, without needing a Bearer token.
 func (s *Server) handleAuthStatus(c *gin.Context) {
+	// Apply the shared auth delay so this endpoint shares the same brute-force
+	// protection as all other auth-adjacent endpoints. Without this, an attacker
+	// could probe pbkdf2Salt (returned here) at unlimited speed while all other
+	// auth endpoints are protected.
+	applyAuthDelay(c.ClientIP())
 	s.Library.mu.Lock()
 	initialized := s.Library.Config.SRPVerifier != ""
 	pbkdf2Salt := s.Library.Config.Pbkdf2Salt
@@ -1110,6 +1133,8 @@ func (s *Server) handleAuthSetup(c *gin.Context) {
 	activeTokensMu.Lock()
 	activeTokens = make(map[string]struct{})
 	activeTokenExpiry = make(map[string]time.Time)
+	activeTokensIP = make(map[string]string)
+	activeTokensPerIP = make(map[string]int)
 	activeTokensMu.Unlock()
 
 	c.JSON(200, gin.H{"ok": true})
@@ -1195,16 +1220,25 @@ func (s *Server) handleSRPVerify(c *gin.Context) {
 	}
 
 	// Register the issued token with a 24-hour TTL.
-	// Cap the map at 1000 entries to prevent memory exhaustion from rapid
-	// token issuance (e.g. repeated SRP handshakes without reusing tokens).
+	// Two caps prevent memory exhaustion and per-IP DoS:
+	//   - Global cap (1000): bounds total map size.
+	//   - Per-IP cap (maxTokensPerIP): prevents a single actor from filling the
+	//     global cap and locking out all users for up to 24 hours.
 	activeTokensMu.Lock()
 	if len(activeTokens) >= 1000 {
 		activeTokensMu.Unlock()
 		c.JSON(503, gin.H{"error": "service_unavailable"})
 		return
 	}
+	if activeTokensPerIP[ip] >= maxTokensPerIP {
+		activeTokensMu.Unlock()
+		c.JSON(503, gin.H{"error": "service_unavailable"})
+		return
+	}
 	activeTokens[token] = struct{}{}
 	activeTokenExpiry[token] = time.Now().Add(24 * time.Hour)
+	activeTokensIP[token] = ip
+	activeTokensPerIP[ip]++
 	activeTokensMu.Unlock()
 
 	clearAuthFailures(ip)
@@ -1295,6 +1329,8 @@ func (s *Server) handleTestResetAuth(c *gin.Context) {
 	activeTokensMu.Lock()
 	activeTokens = make(map[string]struct{})
 	activeTokenExpiry = make(map[string]time.Time)
+	activeTokensIP = make(map[string]string)
+	activeTokensPerIP = make(map[string]int)
 	activeTokensMu.Unlock()
 
 	c.JSON(200, gin.H{"status": "ok"})

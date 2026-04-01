@@ -101,8 +101,9 @@ var (
 func init() {
 	// Evict expired SRP handshake sessions every 2 minutes to prevent map growth.
 	go func() {
-		for {
-			time.Sleep(2 * time.Minute)
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
 			now := time.Now()
 			srpSessionsMu.Lock()
 			for key, sess := range srpSessions {

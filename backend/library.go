@@ -237,19 +237,18 @@ func (l *NoteLibrary) SaveNote(n, c string) error {
 // Used by handleSaveNote for non-canonical filenames (written by WebDAV clients)
 // to prevent TOCTOU races: the client cannot implicitly create files it has not
 // seen in the structure.
+//
+// Uses atomicWriteFile (temp-rename) to avoid the O_TRUNC data-loss window:
+// if the write fails mid-way the original file is not destroyed.
+// The os.Stat pre-check enforces the "no implicit create" invariant.
 func (l *NoteLibrary) UpdateNote(n, c string) error {
-	// O_WRONLY|O_TRUNC without O_CREATE: returns os.ErrNotExist if the file is absent.
-	f, err := os.OpenFile(l.FullPath(n), os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
+	// Verify the target file exists before writing; atomicWriteFile would create
+	// it if absent, which is not what we want for non-canonical names.
+	if _, err := os.Stat(l.FullPath(n)); err != nil {
+		return err // os.ErrNotExist propagated as-is
+	}
+	if err := atomicWriteFile(l.FullPath(n), []byte(c), 0600); err != nil {
 		return err
-	}
-	_, writeErr := f.Write([]byte(c))
-	closeErr := f.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	if closeErr != nil {
-		return closeErr
 	}
 	l.markPending(n)
 	return nil

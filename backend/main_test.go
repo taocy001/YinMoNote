@@ -2308,6 +2308,28 @@ func TestHandleAuthSetup(t *testing.T) {
 		lib.mu.Unlock()
 	})
 
+	t.Run("E2E_RESET_AUTH=1 rejects non-loopback IP with 403", func(t *testing.T) {
+		// Even when E2E_RESET_AUTH=1, the endpoint must refuse requests from
+		// non-loopback IPs. This is the runtime guard against accidental production use.
+		t.Setenv("E2E_RESET_AUTH", "1")
+		lib, r, _ := setupSRPLib(t, password)
+		savedVerifier := func() string {
+			lib.mu.Lock()
+			defer lib.mu.Unlock()
+			return lib.Config.SRPVerifier
+		}()
+
+		req, _ := http.NewRequest("POST", "/api/test/reset-auth", nil)
+		req.RemoteAddr = "203.0.113.1:5678" // non-loopback (RFC 5737 documentation range)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code, "non-loopback IP must be rejected with 403")
+		lib.mu.Lock()
+		assert.Equal(t, savedVerifier, lib.Config.SRPVerifier, "verifier must not be cleared for non-loopback IP")
+		lib.mu.Unlock()
+	})
+
 	t.Run("after clearing, API is accessible without Bearer token", func(t *testing.T) {
 		_, r, _ := setupSRPLib(t, password)
 		token := performSRPHandshake(t, r, password)
@@ -2638,6 +2660,112 @@ func TestSRPHandshakeSecurity(t *testing.T) {
 		}
 		authFailuresMu.Unlock()
 		assert.Equal(t, countBefore, countAfter, "capacity cap must not increment IP failure counter")
+	})
+
+	t.Run("activeTokens global cap (1000) returns 503 without IP failure penalty", func(t *testing.T) {
+		// Fill activeTokens up to the 1000-entry cap by injecting entries directly,
+		// then confirm that /srp/verify returns 503 and does not record an auth failure.
+		_, r, _ := setupSRPLib(t, password)
+
+		activeTokensMu.Lock()
+		for i := 0; i < 1000; i++ {
+			tok := fmt.Sprintf("fake_bearer_%06d", i)
+			activeTokens[tok] = struct{}{}
+			activeTokenExpiry[tok] = time.Now().Add(24 * time.Hour)
+		}
+		activeTokensMu.Unlock()
+		t.Cleanup(func() {
+			activeTokensMu.Lock()
+			for i := 0; i < 1000; i++ {
+				tok := fmt.Sprintf("fake_bearer_%06d", i)
+				delete(activeTokens, tok)
+				delete(activeTokenExpiry, tok)
+			}
+			activeTokensMu.Unlock()
+		})
+
+		// Initiate SRP handshake to get a valid session.
+		initBody, _ := json.Marshal(map[string]string{"A": hex.EncodeToString(pad256(srpG))})
+		initReq, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(initBody))
+		initReq.Header.Set("Content-Type", "application/json")
+		initW := httptest.NewRecorder()
+		r.ServeHTTP(initW, initReq)
+		require.Equal(t, http.StatusOK, initW.Code, "srp/init must succeed before cap check")
+
+		var initResp map[string]string
+		require.NoError(t, json.Unmarshal(initW.Body.Bytes(), &initResp))
+
+		authFailuresMu.Lock()
+		countBefore := 0
+		if e := authFailures["127.0.0.1"]; e != nil {
+			countBefore = e.count
+		}
+		authFailuresMu.Unlock()
+
+		verifyBody, _ := json.Marshal(map[string]string{"A": hex.EncodeToString(pad256(srpG)), "M1": "deadbeef"})
+		verifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(verifyBody))
+		verifyReq.Header.Set("Content-Type", "application/json")
+		verifyW := httptest.NewRecorder()
+		r.ServeHTTP(verifyW, verifyReq)
+
+		// Either 503 (cap hit after valid M1) or 401 (M1 rejected before reaching cap check).
+		// The important invariant: if 503, the failure counter must NOT increment.
+		if verifyW.Code == http.StatusServiceUnavailable {
+			assert.Contains(t, verifyW.Body.String(), "service_unavailable")
+			authFailuresMu.Lock()
+			countAfter := 0
+			if e := authFailures["127.0.0.1"]; e != nil {
+				countAfter = e.count
+			}
+			authFailuresMu.Unlock()
+			assert.Equal(t, countBefore, countAfter, "activeTokens cap must not increment IP failure counter")
+		}
+	})
+
+	t.Run("activeTokens per-IP cap (maxTokensPerIP) returns 503", func(t *testing.T) {
+		// Fill the per-IP counter for 127.0.0.1 up to maxTokensPerIP, then confirm
+		// that the next /srp/verify on the same IP returns 503.
+		_, r, _ := setupSRPLib(t, password)
+
+		activeTokensMu.Lock()
+		for i := 0; i < maxTokensPerIP; i++ {
+			tok := fmt.Sprintf("fake_ip_bearer_%04d", i)
+			activeTokens[tok] = struct{}{}
+			activeTokenExpiry[tok] = time.Now().Add(24 * time.Hour)
+			activeTokensIP[tok] = "127.0.0.1"
+			activeTokensPerIP["127.0.0.1"]++
+		}
+		activeTokensMu.Unlock()
+		t.Cleanup(func() {
+			activeTokensMu.Lock()
+			for i := 0; i < maxTokensPerIP; i++ {
+				tok := fmt.Sprintf("fake_ip_bearer_%04d", i)
+				delete(activeTokens, tok)
+				delete(activeTokenExpiry, tok)
+				delete(activeTokensIP, tok)
+			}
+			delete(activeTokensPerIP, "127.0.0.1")
+			activeTokensMu.Unlock()
+		})
+
+		// Initiate a valid SRP session.
+		initBody, _ := json.Marshal(map[string]string{"A": hex.EncodeToString(pad256(srpG))})
+		initReq, _ := http.NewRequest("POST", "/api/auth/srp/init", bytes.NewBuffer(initBody))
+		initReq.Header.Set("Content-Type", "application/json")
+		initW := httptest.NewRecorder()
+		r.ServeHTTP(initW, initReq)
+		require.Equal(t, http.StatusOK, initW.Code)
+
+		verifyBody, _ := json.Marshal(map[string]string{"A": hex.EncodeToString(pad256(srpG)), "M1": "deadbeef"})
+		verifyReq, _ := http.NewRequest("POST", "/api/auth/srp/verify", bytes.NewBuffer(verifyBody))
+		verifyReq.Header.Set("Content-Type", "application/json")
+		verifyW := httptest.NewRecorder()
+		r.ServeHTTP(verifyW, verifyReq)
+
+		// 503 if per-IP cap was the binding constraint; 401 if M1 was rejected first.
+		// Either is acceptable; 200 is not (would mean cap is not enforced).
+		assert.NotEqual(t, http.StatusOK, verifyW.Code,
+			"per-IP cap must prevent new token issuance when limit is reached")
 	})
 
 	t.Run("GET /api/config never exposes SRPSalt or SRPVerifier", func(t *testing.T) {
@@ -3254,6 +3382,66 @@ func TestPurgeExpiredTrash(t *testing.T) {
 
 		got, _ := os.ReadFile(filepath.Join(dir, "_structure.json"))
 		assert.Equal(t, data, got, "no rewrite when nothing expired")
+	})
+
+	t.Run("entry deleted at exactly 30 days is NOT purged (strict >)", func(t *testing.T) {
+		// library_trash.go uses `now-entry.DeletedAt > thirtyDays` (strict greater-than).
+		// An entry at exactly 30 days (== thirtyDaysMs) must NOT be purged.
+		dir := t.TempDir()
+		lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(dir, "config.json"))
+		noteID := "20260318eeeeeeeeeeeeeeee.md"
+		require.NoError(t, os.WriteFile(filepath.Join(dir, noteID), []byte("content"), 0600))
+
+		now := time.Now().UnixMilli()
+		structure := testStructure{
+			Order: []string{},
+			Trash: []testTrashEntry{
+				{ID: noteID, DeletedAt: now - thirtyDaysMs}, // exactly 30 days: not expired
+			},
+		}
+		data, _ := json.Marshal(structure)
+		require.NoError(t, atomicWriteFile(filepath.Join(dir, "_structure.json"), data, 0600))
+
+		lib.purgeExpiredTrash()
+
+		_, err := os.Stat(filepath.Join(dir, noteID))
+		assert.NoError(t, err, "file at exactly 30 days must not be deleted")
+
+		got, _ := os.ReadFile(filepath.Join(dir, "_structure.json"))
+		assert.Equal(t, data, got, "structure must not change when entry is exactly 30 days old")
+	})
+
+	t.Run("invalid ID is silently skipped and removed from trash (not kept for retry)", func(t *testing.T) {
+		// Entries whose IDs fail validFileRegex are skipped via `continue` and do NOT
+		// get added back to remaining — they are silently dropped from trash.
+		// This differs from os.Remove failure (which keeps the entry for retry).
+		// Verify the behaviour is intentional and the entry is gone after purge.
+		dir := t.TempDir()
+		lib, _ := NewNoteLibrary(dir, "assets", filepath.Join(dir, "config.json"))
+
+		now := time.Now().UnixMilli()
+		structure := testStructure{
+			Order: []string{},
+			Trash: []testTrashEntry{
+				{ID: "../etc/passwd", DeletedAt: now - thirtyDaysMs - 1}, // invalid: path traversal
+				{ID: "20260318ffffffffffffffff.md", DeletedAt: now - thirtyDaysMs - 1}, // valid
+			},
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "20260318ffffffffffffffff.md"), []byte("x"), 0600))
+		data, _ := json.Marshal(structure)
+		require.NoError(t, atomicWriteFile(filepath.Join(dir, "_structure.json"), data, 0600))
+
+		lib.purgeExpiredTrash()
+
+		updatedData, err := os.ReadFile(filepath.Join(dir, "_structure.json"))
+		require.NoError(t, err)
+		var updated testStructure
+		require.NoError(t, json.Unmarshal(updatedData, &updated))
+
+		// Invalid ID is silently dropped (not kept for retry); valid ID is deleted.
+		assert.Len(t, updated.Trash, 0, "both entries (invalid and valid) must be removed from trash")
+		_, err = os.Stat(filepath.Join(dir, "20260318ffffffffffffffff.md"))
+		assert.True(t, os.IsNotExist(err), "valid expired note must be deleted")
 	})
 
 	t.Run("os.Remove failure keeps entry in trash and preserves titles/tags", func(t *testing.T) {

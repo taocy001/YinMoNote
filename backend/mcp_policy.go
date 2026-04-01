@@ -70,7 +70,10 @@ func mcpRuleMatches(rule MCPRule, filename, title string, tags []string, st mcpS
 		}
 
 	case rule.TitleGlob != "":
-		matched, err := filepath.Match(rule.TitleGlob, title)
+		// Use case-insensitive matching so that deny rules like "Secret*" also
+		// cover notes titled "secret diary". filepath.Match is case-sensitive on
+		// all platforms; normalise both sides to lower-case.
+		matched, err := filepath.Match(strings.ToLower(rule.TitleGlob), strings.ToLower(title))
 		return err == nil && matched
 
 	case rule.SubtreeOf != "":

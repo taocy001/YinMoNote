@@ -148,6 +148,10 @@ func (l *NoteLibrary) purgeExpiredTrash() {
 	}
 	newData, err := json.Marshal(generic)
 	if err != nil {
+		// Log the IDs that were deleted from disk but whose removal from the
+		// structure could not be persisted, so operators can detect the mismatch.
+		fmt.Fprintf(os.Stderr, "[YinMo] purgeExpiredTrash: json.Marshal failed (%v); "+
+			"deleted files not reflected in structure: %v\n", err, deletedIDs)
 		return
 	}
 	if err := atomicWriteFile(structPath, newData, 0600); err != nil {

@@ -212,7 +212,9 @@ func (l *NoteLibrary) reconcileStructure() {
 	if err != nil {
 		return
 	}
-	_ = l.AtomicWrite("_structure.json", d)
+	if err := l.AtomicWrite("_structure.json", d); err != nil {
+		fmt.Fprintf(os.Stderr, "[YinMo] reconcileStructure: failed to write structure: %v\n", err)
+	}
 }
 
 // buildMinimalStructure creates a _structure.json containing all known note files
@@ -232,7 +234,9 @@ func (l *NoteLibrary) buildMinimalStructure(actualFiles map[string]bool) {
 	if err != nil {
 		return
 	}
-	_ = l.AtomicWrite("_structure.json", d)
+	if err := l.AtomicWrite("_structure.json", d); err != nil {
+		fmt.Fprintf(os.Stderr, "[YinMo] buildMinimalStructure: failed to write structure: %v\n", err)
+	}
 }
 
 // isExposableNote returns true for .md files that should be visible via both

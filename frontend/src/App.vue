@@ -960,8 +960,12 @@ const handleUnlock = async () => {
           const token = await crypto.deriveSessionToken(tokenInput, API_BASE)
           crypto.storeSessionToken(token)
         }
-      } catch (_) {
-        // Non-fatal: server may be in open/keyless mode.
+      } catch (srpErr: any) {
+        // srp_m2_mismatch means the server's proof of the shared key is wrong —
+        // this is a real authentication failure (possible MITM), not a keyless
+        // server. Re-throw so the unlock flow is aborted.
+        if (srpErr?.message === 'srp_m2_mismatch') throw srpErr
+        // Other errors (network, keyless server, etc.) are non-fatal.
       }
     }
 
