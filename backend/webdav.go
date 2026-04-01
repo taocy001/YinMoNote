@@ -155,18 +155,54 @@ func (dfs *davFileSystem) updateNoteH1(idFilename, newTitle string) error {
 
 // ── davFileSystem ─────────────────────────────────────────────────────────────
 
+// normalizePath strips the leading vault-name segment from WebDAV paths so that
+// clients whose "Remote Base Directory" is set to their vault name (e.g. Obsidian
+// Remotely Save) transparently access the flat note root.
+//
+//	"/"                     → "/"          root access unchanged
+//	"/note.md"              → "/note.md"   root-level file unchanged
+//	"/YinMo/"               → "/"          vault-dir with trailing slash → root
+//	"/YinMo"                → "/"          vault-dir without trailing slash → root
+//	"/YinMo/note.md"        → "/note.md"
+//	"/YinMo/assets/img.png" → "/assets/img.png"
+//
+// The vault name is not stored; any single leading directory segment is stripped.
+// Because our note store is intentionally flat (no user-created subdirectories),
+// a leading directory can only be a client-side vault prefix.
+//
+// Single-segment paths that contain a "." are assumed to be files at the root
+// (e.g. "note.md") and are left unchanged. Single-segment paths with no "."
+// (e.g. "YinMo") are assumed to be bare vault-directory names and mapped to "/".
+// Vault names that contain a "." (e.g. "My.Vault") are not supported by this
+// heuristic; such clients should leave Remote Base Directory empty.
+func normalizePath(name string) string {
+	rel := strings.TrimPrefix(name, "/")
+	if idx := strings.Index(rel, "/"); idx != -1 {
+		// Multi-segment: strip the first segment.
+		return "/" + rel[idx+1:]
+	}
+	// Single-segment with no dot → bare directory name (vault prefix) → root.
+	// Single-segment with a dot → file at the root (e.g. "note.md") → unchanged.
+	if rel != "" && !strings.ContainsRune(rel, '.') {
+		return "/"
+	}
+	return name
+}
+
 // davFileSystem wraps webdav.Dir to:
-//  1. Block access to internal YinMoNote files (_structure.json, hidden files).
-//  2. Filter blocked entries from directory listings so clients never see them.
-//  3. Translate canonical-ID note filenames to human-readable title names so that
+//  1. Normalize vault-prefix paths so Obsidian vaults map to the note root.
+//  2. Block access to internal YinMoNote files (_structure.json, hidden files).
+//  3. Filter blocked entries from directory listings so clients never see them.
+//  4. Translate canonical-ID note filenames to human-readable title names so that
 //     WebDAV clients (e.g. Obsidian) see "数据中心网络.md" instead of "20260329…md".
-//  4. Queue written/deleted files for git commit via markPending.
+//  5. Queue written/deleted files for git commit via markPending.
 type davFileSystem struct {
 	inner webdav.Dir
 	lib   *NoteLibrary
 }
 
 func (dfs *davFileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
+	name = normalizePath(name)
 	if !dfs.allowed(name) {
 		return os.ErrPermission
 	}
@@ -174,6 +210,7 @@ func (dfs *davFileSystem) Mkdir(ctx context.Context, name string, perm os.FileMo
 }
 
 func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
+	name = normalizePath(name)
 	if !dfs.allowed(name) {
 		return nil, os.ErrPermission
 	}
@@ -227,6 +264,7 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 }
 
 func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
+	name = normalizePath(name)
 	if !dfs.allowed(name) {
 		return os.ErrPermission
 	}
@@ -246,6 +284,8 @@ func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
 }
 
 func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) error {
+	oldName = normalizePath(oldName)
+	newName = normalizePath(newName)
 	if !dfs.allowed(oldName) || !dfs.allowed(newName) {
 		return os.ErrPermission
 	}
@@ -270,7 +310,12 @@ func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) e
 	}
 
 	// Standard rename (non-canonical source, or subdirectory move).
-	err := dfs.inner.Rename(ctx, oldTranslated, newName)
+	// Translate newName through the title map so that renaming to an existing
+	// title name overwrites the correct canonical-ID file rather than creating
+	// a literal title-named file alongside it.
+	newTranslated := m.translateToID(newName)
+	newRel = strings.TrimPrefix(newTranslated, "/")
+	err := dfs.inner.Rename(ctx, oldTranslated, newTranslated)
 	if err == nil {
 		dfs.lib.markPending(oldRel)
 		dfs.lib.markPending(newRel)
@@ -282,6 +327,7 @@ func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) e
 }
 
 func (dfs *davFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	name = normalizePath(name)
 	if !dfs.allowed(name) {
 		// Return ErrPermission (not ErrNotExist) so that the webdav PROPFIND
 		// walkFS silently skips blocked entries via handlePropfindError rather
@@ -332,14 +378,14 @@ func isBlockedSegment(seg string) bool {
 //   - null byte in any segment (path-injection guard)
 //   - any segment longer than 255 bytes (filesystem limit)
 //
-// Path depth: at most 5 segments are allowed, supporting WebDAV clients that
-// use a base directory (e.g. Obsidian Remotely Save with vault root "test"):
+// Path depth: at most 5 segments are allowed (measured after normalizePath has
+// stripped the leading vault prefix).  The note store is intentionally flat so
+// only depth 1 is expected in practice; the higher cap accommodates clients
+// that create subdirectories for attachments or templates.
 //
 //	depth 1 — root files            e.g. "note.md"
-//	depth 2 — one subfolder         e.g. "assets/image.png", "test/note.md"
-//	depth 3 — two subfolders        e.g. "test/Daily Notes/note.md"
-//	depth 4 — three subfolders      e.g. "test/Projects/Work/note.md"
-//	depth 5 — four subfolders       e.g. "test/A/B/C/note.md"
+//	depth 2 — one subfolder         e.g. "assets/image.png"
+//	depth 3 — two subfolders        e.g. "assets/2024/photo.png"
 //
 // Paths deeper than 5 segments are rejected to bound directory tree growth.
 func (dfs *davFileSystem) allowed(name string) bool {
