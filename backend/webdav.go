@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -315,6 +316,7 @@ func (dfs *davFileSystem) buildVirtualTree() *davVirtualTree {
 
 	st := dfs.lib.GetStructureParsed()
 	if st == nil {
+		log.Printf("[DAV-VT] hasStructure=false (structure nil)")
 		// Structure unavailable: populate byPath from flat title map so that
 		// individual file Stat/OpenFile calls still resolve correctly.
 		m := dfs.buildTitleMap()
@@ -325,6 +327,7 @@ func (dfs *davFileSystem) buildVirtualTree() *davVirtualTree {
 		}
 		return vt // hasStructure remains false
 	}
+	log.Printf("[DAV-VT] hasStructure=true childOrder_keys=%d order_len=%d", len(st.ChildOrder), len(st.Order))
 	vt.hasStructure = true
 
 	// Collect on-disk note FileInfo for ModTime/Size lookups.
@@ -342,12 +345,12 @@ func (dfs *davFileSystem) buildVirtualTree() *davVirtualTree {
 		}
 	}
 
-	// Build set of note IDs that have children (→ virtual directories).
+	// Build set of note IDs that are virtual directories.
+	// Any ID that appears as a key in ChildOrder is a directory, even if it
+	// currently has no children (e.g. a newly MKCOL-created empty folder).
 	isDirID := make(map[string]bool)
-	for id, children := range st.ChildOrder {
-		if len(children) > 0 {
-			isDirID[id] = true
-		}
+	for id := range st.ChildOrder {
+		isDirID[id] = true
 	}
 
 	// Build set of all trash IDs to exclude from listings.
@@ -907,6 +910,17 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 		return f, nil
 	}
 
+	// Non-.md asset fallback: path is under a virtual dir (has slash) but not in
+	// the tree; try to serve the file by basename from DataDir flat storage.
+	if strings.Contains(rel, "/") {
+		basename := rel[strings.LastIndex(rel, "/")+1:]
+		if basename != "" && !strings.HasSuffix(basename, ".md") && !isBlockedSegment(basename) {
+			if f, err := dfs.inner.OpenFile(ctx, "/"+basename, flag, perm); err == nil {
+				return f, nil
+			}
+		}
+	}
+
 	return nil, os.ErrNotExist
 }
 
@@ -914,10 +928,18 @@ func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, p
 // virtual parent directory and registers it in _structure.json.
 // name must be a clean path like "/ParentTitle/NoteTitle.md".
 func (dfs *davFileSystem) openNewVirtualFile(ctx context.Context, vt *davVirtualTree, name string, flag int, perm os.FileMode) (webdav.File, error) {
-	// Only .md files are handled as notes; non-.md assets are unsupported inside
-	// virtual dirs (the flat note store has no subdirectory for them).
+	// Non-.md files (attachments, test files, etc.) are stored flat in DataDir
+	// using just the basename, bypassing the virtual-tree note registration.
+	// This lets Remotely Save connection tests and basic asset sync work.
 	if !strings.HasSuffix(name, ".md") {
-		return nil, os.ErrPermission
+		basename := name[strings.LastIndex(name, "/")+1:]
+		if basename == "" {
+			return nil, os.ErrInvalid
+		}
+		if isBlockedSegment(basename) {
+			return nil, os.ErrPermission
+		}
+		return dfs.inner.OpenFile(ctx, "/"+basename, flag, perm)
 	}
 
 	lastSlash := strings.LastIndex(name, "/")
@@ -980,6 +1002,13 @@ func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
 					return nil
 				}
 				return err
+			}
+			// Non-.md asset stored flat in DataDir: delete by basename.
+			if strings.Contains(relName, "/") {
+				basename := relName[strings.LastIndex(relName, "/")+1:]
+				if basename != "" && !strings.HasSuffix(basename, ".md") && !isBlockedSegment(basename) {
+					_ = dfs.inner.RemoveAll(ctx, "/"+basename)
+				}
 			}
 			// Not in virtual tree: nothing to delete (return nil — idempotent).
 			return nil
@@ -1243,6 +1272,16 @@ func (dfs *davFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, e
 	// Canonical note IDs are always accessible directly, even with virtual tree active.
 	if validFileRegex.MatchString(rel) {
 		return dfs.inner.Stat(ctx, cleanName)
+	}
+
+	// Non-.md asset fallback: path under a virtual dir; try basename in DataDir.
+	if strings.Contains(rel, "/") {
+		basename := rel[strings.LastIndex(rel, "/")+1:]
+		if basename != "" && !strings.HasSuffix(basename, ".md") && !isBlockedSegment(basename) {
+			if info, err := dfs.inner.Stat(ctx, "/"+basename); err == nil {
+				return info, nil
+			}
+		}
 	}
 
 	return nil, os.ErrNotExist

@@ -167,6 +167,71 @@ test.describe('WebDAV – virtual directory tree', () => {
     }
   })
 
+  /**
+   * Regression: MKCOL-created empty folder must be recognised as a virtual
+   * directory on the immediately following PROPFIND (Bug: isDirID excluded
+   * ChildOrder keys with empty-slice values).
+   */
+  test('MKCOL-created empty folder is immediately accessible via PROPFIND', async ({ unlockedPage: page }) => {
+    const suffix = Math.random().toString(36).slice(2, 10)
+    const folderName = `vt-mkcol-test-${suffix}`
+
+    // MKCOL creates the folder
+    const mkcolResp = await page.request.fetch(`${DAV}/${folderName}/`, { method: 'MKCOL' })
+    expect(mkcolResp.status()).toBe(201)
+
+    try {
+      // PROPFIND on the new folder must return 207, not 404
+      const propfindResp = await page.request.fetch(`${DAV}/${folderName}/`, {
+        method: 'PROPFIND',
+        headers: { 'Depth': '0' },
+      })
+      expect(propfindResp.status()).toBe(207)
+    } finally {
+      await page.request.fetch(`${DAV}/${folderName}/`, { method: 'DELETE' })
+    }
+  })
+
+  /**
+   * Regression: Remotely Save "Check Connection" sequence — MKCOL folder,
+   * PUT non-.md test file inside it, GET file back, DELETE both.
+   * (Bug: non-.md PUT returned 404 because webdav library maps ErrPermission→404)
+   */
+  test('Remotely Save connection test sequence succeeds', async ({ unlockedPage: page }) => {
+    const suffix = Math.random().toString(36).slice(2, 10)
+    const folderName = `rs-test-folder-${suffix}`
+    const fileName   = `rs-test-file-${suffix}`
+    const content    = `rs-test-content-${suffix}`
+
+    // 1. Create folder
+    expect((await page.request.fetch(`${DAV}/${folderName}/`, { method: 'MKCOL' })).status()).toBe(201)
+
+    try {
+      // 2. Folder must be accessible
+      expect((await page.request.fetch(`${DAV}/${folderName}/`, {
+        method: 'PROPFIND', headers: { 'Depth': '0' },
+      })).status()).toBe(207)
+
+      // 3. PUT non-.md test file inside the folder
+      const putResp = await page.request.fetch(`${DAV}/${folderName}/${fileName}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        data: content,
+      })
+      expect(putResp.status()).toBeLessThan(300)
+
+      // 4. GET file back and verify content
+      const getResp = await page.request.get(`${DAV}/${folderName}/${fileName}`)
+      expect(getResp.status()).toBe(200)
+      expect(await getResp.text()).toBe(content)
+
+      // 5. DELETE file
+      expect((await page.request.fetch(`${DAV}/${folderName}/${fileName}`, { method: 'DELETE' })).status()).toBeLessThan(300)
+    } finally {
+      await page.request.fetch(`${DAV}/${folderName}/`, { method: 'DELETE' })
+    }
+  })
+
   test('notes without children appear as flat files at root', async ({ unlockedPage: page }) => {
     expect((await page.request.put(`${API}/config`, { data: { serverEncrypt: false } })).status()).toBe(200)
 
