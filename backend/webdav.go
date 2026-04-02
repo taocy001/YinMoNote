@@ -661,18 +661,19 @@ func (dfs *davFileSystem) normalizeDavPath(name string, vt *davVirtualTree) stri
 		}
 	}
 
-	// Condition 3: normalization would discard a meaningful path segment by
-	// collapsing to root (bare-directory heuristic in normalizePath).
-	if normalized == "/" && cleanOrig != "/" {
-		return name
-	}
-
 	return normalized
 }
 
 func (dfs *davFileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
 	vt := dfs.buildVirtualTree()
+	origName := name
 	name = dfs.normalizeDavPath(name, vt)
+	// normalizeDavPath strips single-segment vault-prefix paths to "/" for read
+	// operations.  For MKCOL we need the original segment name as the directory
+	// title (e.g. "/NewFolder"), so re-apply it when normalization collapsed to "/".
+	if name == "/" && origName != "/" {
+		name = "/" + strings.Trim(origName, "/")
+	}
 	if !dfs.allowed(name) {
 		return os.ErrPermission
 	}
