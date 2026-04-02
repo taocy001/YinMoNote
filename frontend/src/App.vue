@@ -129,10 +129,32 @@
             <!-- Pin indicator (always visible when pinned) -->
             <svg v-if="item.isPinned" class="shrink-0" width="10" height="10" viewBox="0 0 16 16" fill="none" style="color: var(--accent); opacity: 0.7;"><path d="M9.828 2.172a1.5 1.5 0 0 1 2.121 0l1.879 1.879a1.5 1.5 0 0 1 0 2.121L11 9l-.5 3.5L7 9l-3.5.5L6.5 5l-2.828-2.828z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.2"/><path d="M3.5 12.5L7 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
 
-            <!-- More menu button: hover-only on desktop, always visible on mobile -->
-            <button @click.stop="openNoteMenu($event, item.key)" class="md:opacity-0 md:group-hover:opacity-100 sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all shrink-0" style="color: var(--text-muted);" data-testid="note-more-btn">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
-            </button>
+            <!-- Hover action buttons: absolutely positioned so they don't consume flex space.
+                 Title (flex-1) fills available width; center-click always lands in the title area.
+                 pointer-events-none when hidden prevents Playwright hover-before-click from
+                 intercepting the click even after group-hover activates opacity. -->
+            <div class="absolute right-0 inset-y-0 hidden md:flex items-center gap-1 pr-2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <button @click.stop="openTagEdit(item.key, noteTags[item.key] || [])"
+                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
+                style="color: var(--text-muted);" :title="t.tagEdit">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h4.2l4.8 4.8-4.2 4.2L1.5 5.7V1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.8" fill="currentColor"/></svg>
+              </button>
+              <button @click.stop="createSubNote(item.key)"
+                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
+                style="color: var(--text-muted);" :title="t.createSubNote">
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </button>
+              <button data-testid="note-delete-btn" @click.stop="confirmDeleteNote(item.key)"
+                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
+                style="color: var(--color-danger);" :title="t.delete">
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2.5 3.5h9M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button @click.stop="openNoteMenu($event, item.key)"
+                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
+                style="color: var(--text-muted);" data-testid="note-more-btn">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
+              </button>
+            </div>
 
             <!-- Inline tag editor popup -->
             <Teleport to="body" v-if="tagEditKey === item.key">

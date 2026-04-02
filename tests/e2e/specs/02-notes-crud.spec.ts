@@ -34,6 +34,8 @@ test.describe('Notes – CRUD', () => {
     // when unlockKeyless() returns, which causes the empty-state element to flash
     // in and out as the note list renders, leading to a detached-element click error).
     await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+    // Extra settle time for Vue reactive updates after notes list renders
+    await page.waitForTimeout(300)
     const emptyBtn = page.locator('[data-testid="empty-state-new-note-btn"]')
     const sidebarBtn = page.locator('[data-testid="new-note-btn"]')
     // Use the empty-state button if visible (fresh server), otherwise sidebar button
