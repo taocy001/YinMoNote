@@ -273,6 +273,64 @@ func isExposableNote(name string) bool {
 	return true
 }
 
+// GetStructureParsed parses _structure.json and returns a pointer to the
+// decoded Structure, or nil when the file is absent, unreadable, encrypted
+// (ENC1: prefix), or contains malformed JSON.
+// The read is protected by structureMu to avoid a torn read concurrent with
+// SaveStructure or UpdateStructureFunc.
+func (l *NoteLibrary) GetStructureParsed() *Structure {
+	l.structureMu.Lock()
+	raw, err := os.ReadFile(l.FullPath("_structure.json"))
+	l.structureMu.Unlock()
+	if err != nil {
+		return nil
+	}
+	if strings.HasPrefix(strings.TrimSpace(string(raw)), "ENC1:") {
+		return nil // server-side encryption: structure is opaque ciphertext
+	}
+	var st Structure
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return nil
+	}
+	return &st
+}
+
+// UpdateStructureFunc atomically reads, modifies, and writes _structure.json.
+// The provided fn receives a pointer to the decoded Structure; it may modify
+// any fields in-place.  The updated value is marshalled and written back
+// atomically.  structureMu is held for the entire operation, so it is mutually
+// exclusive with SaveStructure and reconcileStructure.
+//
+// Returns an error if the file is missing, encrypted, corrupt, or the write
+// fails.  The error from fn itself is intentionally not propagated — fn is
+// expected to silently ignore invalid state (e.g. a note already removed from
+// its parent) rather than aborting the write.
+func (l *NoteLibrary) UpdateStructureFunc(fn func(*Structure)) error {
+	l.structureMu.Lock()
+	defer l.structureMu.Unlock()
+	raw, err := os.ReadFile(l.FullPath("_structure.json"))
+	if err != nil {
+		return fmt.Errorf("read structure: %w", err)
+	}
+	if strings.HasPrefix(strings.TrimSpace(string(raw)), "ENC1:") {
+		return fmt.Errorf("structure is encrypted: cannot update")
+	}
+	var st Structure
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return fmt.Errorf("parse structure: %w", err)
+	}
+	fn(&st)
+	d, err := json.Marshal(st)
+	if err != nil {
+		return fmt.Errorf("marshal structure: %w", err)
+	}
+	if err := l.AtomicWrite("_structure.json", d); err != nil {
+		return fmt.Errorf("write structure: %w", err)
+	}
+	l.markPending("_structure.json")
+	return nil
+}
+
 // StartReconcileDebouncer runs as a background goroutine and coalesces multiple
 // WebDAV write/delete/rename events into a single reconcileStructure call.
 // It checks reconcilePending every 2 seconds; if the flag is set it clears it

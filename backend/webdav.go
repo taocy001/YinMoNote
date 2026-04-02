@@ -6,10 +6,13 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/net/webdav"
@@ -73,6 +76,9 @@ func davSanitizeTitle(title string) string {
 // buildTitleMap constructs the bidirectional ID↔title mapping by scanning the library.
 // It is called on every write/stat/readdir operation; cost is one os.ReadDir + up to
 // MaxTotalNotes × 512-byte file peeks, which is fast enough for interactive use.
+//
+// Notes are sorted by canonical ID (alphabetical) before building the dedup map so
+// that collision numbers are stable regardless of file ModTime changes (C-006 fix).
 func (dfs *davFileSystem) buildTitleMap() *davNameMap {
 	m := &davNameMap{
 		titleToID: make(map[string]string),
@@ -82,6 +88,8 @@ func (dfs *davFileSystem) buildTitleMap() *davNameMap {
 	if err != nil {
 		return m
 	}
+	// Sort by canonical ID for deterministic dedup ordering regardless of ModTime.
+	sort.Slice(notes, func(i, j int) bool { return notes[i].Name < notes[j].Name })
 	seen := make(map[string]int) // sanitized base → count of collisions
 	for _, note := range notes {
 		if !validFileRegex.MatchString(note.Name) {
@@ -153,6 +161,415 @@ func (dfs *davFileSystem) updateNoteH1(idFilename, newTitle string) error {
 	return nil
 }
 
+// ── Virtual directory tree ─────────────────────────────────────────────────────
+
+// davVirtualNode represents one item in the virtual WebDAV directory tree
+// derived from _structure.json.  All IDs are canonical note filenames
+// (e.g. "20260329…md"); there are no separate "folder ID" objects in the
+// current frontend model — a note that has children acts as a directory.
+type davVirtualNode struct {
+	id      string    // canonical note filename (e.g. "20260329abc.md")
+	isDir   bool      // true when the node maps to a WebDAV directory (has children)
+	title   string    // sanitized, deduped display name (without .md extension)
+	modTime time.Time // for files: file ModTime; for dirs: max child ModTime
+}
+
+// davVirtualTree is the complete in-memory virtual filesystem snapshot derived
+// from _structure.json.  It is rebuilt on every davFileSystem method call and
+// is therefore always consistent with the current state of _structure.json.
+// Paths use a canonical form: "/" for root, "/DirTitle" or "/DirTitle/" for
+// virtual directories (both stored), "/DirTitle/NoteTitle.md" for files.
+type davVirtualTree struct {
+	hasStructure bool                     // false when structure is absent/encrypted/corrupt
+	byPath       map[string]*davVirtualNode // virtual path → node
+	children     map[string][]os.FileInfo   // dir path (with trailing /) → ordered children FileInfo
+	noteToPath   map[string]string          // canonical note ID → virtual file path
+}
+
+// davVirtualDirInfo implements os.FileInfo for virtual directories that have
+// no physical counterpart on disk.
+type davVirtualDirInfo struct {
+	name    string
+	modTime time.Time
+}
+
+func (i *davVirtualDirInfo) Name() string      { return i.name }
+func (i *davVirtualDirInfo) Size() int64       { return 0 }
+func (i *davVirtualDirInfo) Mode() os.FileMode { return os.ModeDir | 0555 }
+func (i *davVirtualDirInfo) ModTime() time.Time { return i.modTime }
+func (i *davVirtualDirInfo) IsDir() bool       { return true }
+func (i *davVirtualDirInfo) Sys() interface{}  { return nil }
+
+// davVirtualFileInfo implements os.FileInfo for files inside virtual directories,
+// returned by davVirtualDirFile.Readdir.  Size and ModTime come from the real
+// os.FileInfo of the underlying canonical-ID file gathered during tree build.
+type davVirtualFileInfo struct {
+	name    string
+	size    int64
+	modTime time.Time
+}
+
+func (i *davVirtualFileInfo) Name() string      { return i.name }
+func (i *davVirtualFileInfo) Size() int64       { return i.size }
+func (i *davVirtualFileInfo) Mode() os.FileMode { return 0444 }
+func (i *davVirtualFileInfo) ModTime() time.Time { return i.modTime }
+func (i *davVirtualFileInfo) IsDir() bool       { return false }
+func (i *davVirtualFileInfo) Sys() interface{}  { return nil }
+
+// davStatWrappedFile wraps a webdav.File and overrides its Stat method to
+// return a caller-supplied os.FileInfo.  Used for read-only virtual file opens
+// so that the webdav library receives the virtual display name (e.g. "Task
+// One.md") in Stat() rather than the underlying canonical-ID name
+// (e.g. "20260101…aa02.md") that the OS file would report.
+type davStatWrappedFile struct {
+	webdav.File
+	info os.FileInfo
+}
+
+func (f *davStatWrappedFile) Stat() (os.FileInfo, error) { return f.info, nil }
+
+// davVirtualDirFile implements webdav.File for virtual directories.
+// It embeds a real webdav.File opened on the DataDir root so that DeadProps
+// and Patch are handled correctly by the inner implementation.
+type davVirtualDirFile struct {
+	webdav.File           // real root dir file — provides DeadProps/Patch/Close
+	dirInfo  *davVirtualDirInfo
+	children []os.FileInfo
+	pos      int
+}
+
+func (f *davVirtualDirFile) Read([]byte) (int, error)            { return 0, io.EOF }
+func (f *davVirtualDirFile) Seek(int64, int) (int64, error)      { return 0, os.ErrPermission }
+func (f *davVirtualDirFile) Stat() (os.FileInfo, error)          { return f.dirInfo, nil }
+
+func (f *davVirtualDirFile) Readdir(count int) ([]os.FileInfo, error) {
+	if count <= 0 {
+		// Return all remaining entries (webdav package calls Readdir(-1)).
+		result := f.children[f.pos:]
+		f.pos = len(f.children)
+		return result, nil
+	}
+	if f.pos >= len(f.children) {
+		return nil, io.EOF
+	}
+	end := f.pos + count
+	if end > len(f.children) {
+		end = len(f.children)
+	}
+	result := f.children[f.pos:end]
+	f.pos = end
+	return result, nil
+}
+
+// davNewNoteFile wraps davCommitFile and additionally updates _structure.json
+// when Close is called after a successful write: the new note is added to the
+// structure under its parent (or at root level when parentID is empty).
+type davNewNoteFile struct {
+	davCommitFile
+	parentID     string // empty = root; otherwise the parent note's canonical ID
+	displayTitle string // used to set structure.Titles for the new note
+}
+
+func (f *davNewNoteFile) Close() error {
+	err := f.davCommitFile.Close()
+	if err == nil && f.written {
+		noteID := f.davCommitFile.rel
+		updateErr := f.lib.UpdateStructureFunc(func(st *Structure) {
+			if st.Titles == nil {
+				st.Titles = make(map[string]string)
+			}
+			st.Titles[noteID] = f.displayTitle
+			if f.parentID == "" {
+				st.Order = append(st.Order, noteID)
+			} else {
+				if st.ChildOrder == nil {
+					st.ChildOrder = make(map[string][]string)
+				}
+				if st.Parents == nil {
+					st.Parents = make(map[string]string)
+				}
+				st.ChildOrder[f.parentID] = append(st.ChildOrder[f.parentID], noteID)
+				st.Parents[noteID] = f.parentID
+			}
+		})
+		if updateErr != nil {
+			fmt.Fprintf(os.Stderr, "YinMo: WebDAV new-note structure update failed: %v\n", updateErr)
+		}
+	}
+	return err
+}
+
+// ── Virtual tree construction ─────────────────────────────────────────────────
+
+// buildVirtualTree constructs the in-memory virtual directory tree from
+// _structure.json.  When the structure is unavailable (missing / encrypted /
+// corrupt), hasStructure is set to false and the tree contains a flat mapping
+// of title-based paths identical to buildTitleMap, so callers can detect the
+// fallback case and apply the legacy code path.
+func (dfs *davFileSystem) buildVirtualTree() *davVirtualTree {
+	vt := &davVirtualTree{
+		byPath:     make(map[string]*davVirtualNode),
+		children:   make(map[string][]os.FileInfo),
+		noteToPath: make(map[string]string),
+	}
+
+	st := dfs.lib.GetStructureParsed()
+	if st == nil {
+		// Structure unavailable: populate byPath from flat title map so that
+		// individual file Stat/OpenFile calls still resolve correctly.
+		m := dfs.buildTitleMap()
+		for id, titleName := range m.idToTitle {
+			title := strings.TrimSuffix(titleName, ".md")
+			vt.byPath["/"+titleName] = &davVirtualNode{id: id, isDir: false, title: title}
+			vt.noteToPath[id] = "/" + titleName
+		}
+		return vt // hasStructure remains false
+	}
+	vt.hasStructure = true
+
+	// Collect on-disk note FileInfo for ModTime/Size lookups.
+	type noteEntry struct {
+		modTime time.Time
+		size    int64
+	}
+	noteInfo := make(map[string]noteEntry)
+	entries, _ := os.ReadDir(dfs.lib.DataDir)
+	for _, e := range entries {
+		if !e.IsDir() && isExposableNote(e.Name()) {
+			if info, err := e.Info(); err == nil {
+				noteInfo[e.Name()] = noteEntry{modTime: info.ModTime(), size: info.Size()}
+			}
+		}
+	}
+
+	// Build set of note IDs that have children (→ virtual directories).
+	isDirID := make(map[string]bool)
+	for id, children := range st.ChildOrder {
+		if len(children) > 0 {
+			isDirID[id] = true
+		}
+	}
+
+	// Build set of all trash IDs to exclude from listings.
+	trashIDs := make(map[string]bool)
+	for _, te := range st.Trash {
+		trashIDs[te.ID] = true
+	}
+
+	// getTitle returns the display title for a note or folder ID.
+	// Prefers the cached value in st.Titles, falls back to reading the file.
+	// Non-canonical filenames (e.g. "My Note.md") are exposed under their own
+	// stem rather than their content — the filename IS the human-readable label.
+	getTitle := func(id string) string {
+		if st.Titles != nil {
+			if t, ok := st.Titles[id]; ok && t != "" {
+				return t
+			}
+		}
+		if strings.HasSuffix(id, ".md") {
+			// Non-canonical filenames: the stem is already the display label.
+			// Do not extract from content so that "existing.md" with content "old"
+			// is still reachable at "/existing.md", not "/old.md".
+			if !validFileRegex.MatchString(id) {
+				return strings.TrimSuffix(id, ".md")
+			}
+			if t := extractNoteTitle(dfs.lib.FullPath(id)); t != "" {
+				return t
+			}
+			return strings.TrimSuffix(id, ".md")
+		}
+		return id // non-.md folder ID: use ID as label
+	}
+
+	// computeMaxModTime returns the latest ModTime in the subtree rooted at id.
+	var computeMaxModTime func(string, map[string]bool) time.Time
+	computeMaxModTime = func(id string, visited map[string]bool) time.Time {
+		if visited[id] {
+			return time.Time{}
+		}
+		visited[id] = true
+		var mt time.Time
+		if ni, ok := noteInfo[id]; ok && ni.modTime.After(mt) {
+			mt = ni.modTime
+		}
+		for _, child := range st.ChildOrder[id] {
+			if ct := computeMaxModTime(child, visited); ct.After(mt) {
+				mt = ct
+			}
+		}
+		return mt
+	}
+
+	// processLevel populates vt for a list of IDs under a given parent path.
+	// parentPath must end with "/" (use "/" for root).
+	var processLevel func(parentPath string, ids []string)
+	processLevel = func(parentPath string, ids []string) {
+		// Collect non-trash IDs and sort alphabetically for deterministic dedup.
+		sorted := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if !trashIDs[id] {
+				sorted = append(sorted, id)
+			}
+		}
+		sort.Strings(sorted)
+
+		seen := make(map[string]int) // base title → collision count
+		for _, id := range sorted {
+			rawTitle := davSanitizeTitle(getTitle(id))
+			if rawTitle == "" {
+				rawTitle = id
+			}
+			n := seen[rawTitle]
+			seen[rawTitle]++
+			displayTitle := rawTitle
+			if n > 0 {
+				displayTitle = fmt.Sprintf("%s (%d)", rawTitle, n+1)
+			}
+
+			if isDirID[id] {
+				// Virtual directory node.
+				dirPath := parentPath + displayTitle // e.g. "/ProjectA"
+				mt := computeMaxModTime(id, make(map[string]bool))
+				if mt.IsZero() {
+					mt = time.Now()
+				}
+				node := &davVirtualNode{id: id, isDir: true, title: displayTitle, modTime: mt}
+				vt.byPath[dirPath] = node
+				vt.byPath[dirPath+"/"] = node // accept both forms
+
+				// Add this directory entry to parent's children list.
+				vt.children[parentPath] = append(vt.children[parentPath],
+					&davVirtualDirInfo{name: displayTitle, modTime: mt})
+
+				// If the directory node is a note (not a pure folder ID), also expose
+				// its content as a same-named .md file inside the directory.
+				// This mirrors the "folder note" pattern used by batch import.
+				if strings.HasSuffix(id, ".md") {
+					if ni, ok := noteInfo[id]; ok {
+						filePath := dirPath + "/" + displayTitle + ".md"
+						fileNode := &davVirtualNode{id: id, isDir: false, title: displayTitle, modTime: ni.modTime}
+						vt.byPath[filePath] = fileNode
+						vt.noteToPath[id] = filePath
+						vt.children[dirPath+"/"] = append(vt.children[dirPath+"/"],
+							&davVirtualFileInfo{name: displayTitle + ".md", size: ni.size, modTime: ni.modTime})
+					}
+				}
+
+				// Recurse into children.
+				processLevel(dirPath+"/", st.ChildOrder[id])
+
+			} else if strings.HasSuffix(id, ".md") {
+				// Leaf note: flat file inside parent.
+				if ni, ok := noteInfo[id]; ok {
+					filePath := parentPath + displayTitle + ".md"
+					node := &davVirtualNode{id: id, isDir: false, title: displayTitle, modTime: ni.modTime}
+					vt.byPath[filePath] = node
+					vt.noteToPath[id] = filePath
+					vt.children[parentPath] = append(vt.children[parentPath],
+						&davVirtualFileInfo{name: displayTitle + ".md", size: ni.size, modTime: ni.modTime})
+				}
+			}
+			// Non-.md IDs without children (empty folders) are silently omitted.
+		}
+	}
+
+	// Build the set of all IDs referenced anywhere in the structure so orphans
+	// can be detected.
+	referenced := make(map[string]bool)
+	for _, id := range st.Order {
+		referenced[id] = true
+	}
+	for id, children := range st.ChildOrder {
+		referenced[id] = true
+		for _, c := range children {
+			referenced[c] = true
+		}
+	}
+
+	// Augment root order with orphan notes (on disk but absent from structure).
+	augmentedOrder := make([]string, len(st.Order))
+	copy(augmentedOrder, st.Order)
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() && isExposableNote(name) && !referenced[name] && !trashIDs[name] {
+			augmentedOrder = append(augmentedOrder, name)
+		}
+	}
+
+	processLevel("/", augmentedOrder)
+	return vt
+}
+
+// ── Structure-update helpers ──────────────────────────────────────────────────
+
+// removeFromStringSlice returns s with all occurrences of item removed.
+// Modifies the underlying slice header only (slice is not rearranged in memory).
+func removeFromStringSlice(s []string, item string) []string {
+	out := s[:0]
+	for _, v := range s {
+		if v != item {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// removeNoteFromStructure removes noteID from all structure fields where it
+// appears: Order, ChildOrder (as a child), Parents (as a key), Titles, Tags.
+// It is deliberately defensive: no error is returned if noteID is not found.
+func removeNoteFromStructure(st *Structure, noteID string) {
+	st.Order = removeFromStringSlice(st.Order, noteID)
+	if st.Parents != nil {
+		parentID := st.Parents[noteID]
+		if parentID != "" && st.ChildOrder != nil {
+			st.ChildOrder[parentID] = removeFromStringSlice(st.ChildOrder[parentID], noteID)
+			if len(st.ChildOrder[parentID]) == 0 {
+				delete(st.ChildOrder, parentID)
+			}
+		}
+		delete(st.Parents, noteID)
+	}
+	if st.Titles != nil {
+		delete(st.Titles, noteID)
+	}
+	if st.Tags != nil {
+		delete(st.Tags, noteID)
+	}
+	if st.CommitLabels != nil {
+		delete(st.CommitLabels, noteID)
+	}
+}
+
+// collectSubtreeNoteIDs returns all canonical note IDs (ending in .md) in the
+// subtree rooted at rootID, including rootID itself if it is a note.
+// Uses a visited set to guard against cycles (which reconcileStructure prevents
+// but which may transiently appear during concurrent structure updates).
+func collectSubtreeNoteIDs(rootID string, st *Structure) []string {
+	var ids []string
+	visited := make(map[string]bool)
+	var walk func(string)
+	walk = func(id string) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+		if strings.HasSuffix(id, ".md") {
+			ids = append(ids, id)
+		}
+		for _, child := range st.ChildOrder[id] {
+			walk(child)
+		}
+	}
+	walk(rootID)
+	return ids
+}
+
+// newCanonicalNoteID generates a fresh canonical note filename using the
+// current date and a cryptographically random 16-character suffix.
+func newCanonicalNoteID() string {
+	return time.Now().Format("20060102") + randomString(16) + ".md"
+}
+
 // ── davFileSystem ─────────────────────────────────────────────────────────────
 
 // normalizePath strips the leading vault-name segment from WebDAV paths so that
@@ -201,73 +618,418 @@ type davFileSystem struct {
 	lib   *NoteLibrary
 }
 
+// normalizeDavPath applies vault-prefix normalization (normalizePath) unless
+// the original path should be preserved because it refers to (or is inside)
+// the active virtual tree.  Three conditions prevent stripping:
+//
+//  1. The original path itself is a known virtual node (existing virtual file or dir).
+//  2. The parent segment of the original path is a known virtual directory — so
+//     paths like "/ProjectA/NewNote.md" or "/ProjectA/SubDir" (new items inside a
+//     virtual dir) are not stripped to "/NewNote.md" or "/SubDir".
+//  3. normalizePath would collapse the path to "/" (bare dir → root heuristic) but
+//     the original path had a non-empty segment — preserve it so MKCOL/MKDIR of
+//     a new root-level virtual directory name like "/NewFolder" is not lost.
+//
+// When the virtual tree is inactive (no _structure.json), behaviour is
+// identical to normalizePath alone.
+//
+// Examples with virtual dir "ProjectA" active:
+//
+//	"/ProjectA/Task One.md" → kept (matches virtual node)
+//	"/ProjectA/Task Two.md" → kept (parent "/ProjectA" is virtual dir)
+//	"/ProjectA/SubDir"      → kept (parent "/ProjectA" is virtual dir)
+//	"/NewFolder"            → kept (would collapse to "/"; preserved for MKCOL)
+//	"/YinMo/note.md"        → "/note.md" (parent not a virtual dir; vault prefix stripped)
+func (dfs *davFileSystem) normalizeDavPath(name string, vt *davVirtualTree) string {
+	normalized := normalizePath(name)
+	if normalized == name || !vt.hasStructure {
+		return normalized
+	}
+	cleanOrig := "/" + strings.Trim(name, "/")
+
+	// Condition 1: exact virtual node match.
+	if _, ok := vt.byPath[cleanOrig]; ok {
+		return name
+	}
+
+	// Condition 2: parent is a known virtual directory.
+	lastSlash := strings.LastIndex(cleanOrig, "/")
+	if lastSlash > 0 {
+		parentPath := cleanOrig[:lastSlash]
+		if node, ok := vt.byPath[parentPath]; ok && node.isDir {
+			return name
+		}
+	}
+
+	// Condition 3: normalization would discard a meaningful path segment by
+	// collapsing to root (bare-directory heuristic in normalizePath).
+	if normalized == "/" && cleanOrig != "/" {
+		return name
+	}
+
+	return normalized
+}
+
 func (dfs *davFileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
-	name = normalizePath(name)
+	vt := dfs.buildVirtualTree()
+	name = dfs.normalizeDavPath(name, vt)
 	if !dfs.allowed(name) {
 		return os.ErrPermission
 	}
+
+	// When structure is available, create a "folder note" — a canonical note
+	// with H1 title equal to the directory name — and register it in the
+	// structure.  This is the same mechanism used by the batch-import path.
+	cleanName := "/" + strings.Trim(name, "/")
+	lastSlash := strings.LastIndex(cleanName, "/")
+	dirTitle := cleanName[lastSlash+1:]
+	if dirTitle == "" {
+		return os.ErrInvalid
+	}
+	if vt.hasStructure {
+		// Reject if path already exists in virtual tree.
+		if _, exists := vt.byPath[cleanName]; exists {
+			return os.ErrExist
+		}
+		// Determine parent virtual dir.
+		parentPath := cleanName[:lastSlash+1]
+		var parentID string
+		if parentPath != "/" {
+			parentClean := strings.TrimSuffix(parentPath, "/")
+			parentNode, ok := vt.byPath[parentClean]
+			if !ok || !parentNode.isDir {
+				return os.ErrNotExist
+			}
+			parentID = parentNode.id
+		}
+		// Quota check.
+		newID := newCanonicalNoteID()
+		if err := dfs.lib.CheckNoteQuota(newID, 0); err != nil {
+			return &davQuotaError{reason: err.Error()}
+		}
+		// Write a minimal note containing only the H1 title.
+		content := "# " + dirTitle + "\n"
+		if err := dfs.lib.AtomicWrite(newID, []byte(content)); err != nil {
+			return err
+		}
+		// Update structure.
+		if err := dfs.lib.UpdateStructureFunc(func(st *Structure) {
+			if st.Titles == nil {
+				st.Titles = make(map[string]string)
+			}
+			st.Titles[newID] = dirTitle
+			if parentID == "" {
+				st.Order = append(st.Order, newID)
+			} else {
+				if st.ChildOrder == nil {
+					st.ChildOrder = make(map[string][]string)
+				}
+				if st.Parents == nil {
+					st.Parents = make(map[string]string)
+				}
+				st.ChildOrder[parentID] = append(st.ChildOrder[parentID], newID)
+				st.Parents[newID] = parentID
+			}
+		}); err != nil {
+			// Structure update failed; remove the orphan note we just created.
+			_ = os.Remove(dfs.lib.FullPath(newID))
+			return err
+		}
+		dfs.lib.markPending(newID)
+		dfs.lib.reconcilePending.Store(true)
+		return nil
+	}
+
+	// Fallback: no structure available — create a real directory on disk.
 	return dfs.inner.Mkdir(ctx, name, perm)
 }
 
 func (dfs *davFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
-	name = normalizePath(name)
+	vt := dfs.buildVirtualTree()
+	name = dfs.normalizeDavPath(name, vt)
 	if !dfs.allowed(name) {
 		return nil, os.ErrPermission
 	}
 
-	// ── Title→ID translation for root-level .md files ─────────────────────────
-	// Build the mapping on every open so we always have a fresh view. This covers
-	// reads (GET, PROPFIND stat), writes (PUT existing), and directory opens.
 	rel := strings.TrimPrefix(name, "/")
-	isRootMD := !strings.ContainsRune(rel, '/') && strings.HasSuffix(rel, ".md")
 
-	if isRootMD {
-		m := dfs.buildTitleMap()
-		name = m.translateToID(name)
-		rel = strings.TrimPrefix(name, "/")
-	}
-
-	// ── Quota check for new canonical .md files ───────────────────────────────
-	isNew := false
-	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
-		if flag&os.O_CREATE != 0 && strings.HasSuffix(rel, ".md") {
-			if _, statErr := os.Stat(dfs.lib.FullPath(rel)); os.IsNotExist(statErr) {
-				isNew = true
-				if err := dfs.lib.CheckNoteQuota(rel, 0); err != nil {
-					return nil, &davQuotaError{reason: err.Error()}
-				}
+	// ── Root directory open ────────────────────────────────────────────────────
+	if rel == "" || name == "/" {
+		if vt.hasStructure {
+			inner, err := dfs.inner.OpenFile(ctx, "/", os.O_RDONLY, 0)
+			if err != nil {
+				return nil, err
 			}
+			return &davVirtualDirFile{
+				File:     inner,
+				dirInfo:  &davVirtualDirInfo{name: "", modTime: time.Now()},
+				children: vt.children["/"],
+			}, nil
 		}
-	}
-
-	f, err := dfs.inner.OpenFile(ctx, name, flag, perm)
-	if err != nil {
-		return nil, err
-	}
-
-	// Wrap directory opens to filter blocked entries and attach the title map.
-	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
-		// Only pass the title map for the root directory listing.
-		var m *davNameMap
-		if rel == "" || rel == "." {
-			m = dfs.buildTitleMap()
+		// Fallback: no structure — use legacy directory listing.
+		f, err := dfs.inner.OpenFile(ctx, "/", flag, perm)
+		if err != nil {
+			return nil, err
 		}
+		m := dfs.buildTitleMap()
 		return &davDirFile{File: f, m: m}, nil
 	}
 
-	// Wrap write-mode opens to queue a git commit when the file is closed.
-	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
-		truncated := flag&os.O_TRUNC != 0
-		return &davCommitFile{File: f, lib: dfs.lib, rel: rel, written: truncated, isNew: isNew}, nil
+	cleanName := "/" + strings.Trim(name, "/")
+
+	// ── Virtual directory open ─────────────────────────────────────────────────
+	if node, ok := vt.byPath[cleanName]; ok && node.isDir {
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE) != 0 {
+			return nil, os.ErrPermission // cannot write-open a directory
+		}
+		inner, err := dfs.inner.OpenFile(ctx, "/", os.O_RDONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		dirPath := cleanName + "/"
+		return &davVirtualDirFile{
+			File:     inner,
+			dirInfo:  &davVirtualDirInfo{name: node.title, modTime: node.modTime},
+			children: vt.children[dirPath],
+		}, nil
 	}
-	return f, nil
+
+	// ── Virtual file open ──────────────────────────────────────────────────────
+	if node, ok := vt.byPath[cleanName]; ok && !node.isDir {
+		canonicalPath := "/" + node.id
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+			isNew := false
+			if flag&os.O_CREATE != 0 {
+				if _, statErr := os.Stat(dfs.lib.FullPath(node.id)); os.IsNotExist(statErr) {
+					isNew = true
+					if err := dfs.lib.CheckNoteQuota(node.id, 0); err != nil {
+						return nil, &davQuotaError{reason: err.Error()}
+					}
+				}
+			}
+			f, err := dfs.inner.OpenFile(ctx, canonicalPath, flag, perm)
+			if err != nil {
+				return nil, err
+			}
+			truncated := flag&os.O_TRUNC != 0
+			return &davCommitFile{File: f, lib: dfs.lib, rel: node.id, written: truncated, isNew: isNew}, nil
+		}
+		// Read-only open: wrap with a virtual stat so the webdav library reports
+		// the display name (e.g. "Task One.md") rather than the canonical ID.
+		f, err := dfs.inner.OpenFile(ctx, canonicalPath, flag, perm)
+		if err != nil {
+			return nil, err
+		}
+		innerInfo, serr := dfs.inner.Stat(ctx, canonicalPath)
+		if serr != nil {
+			return f, nil // stat failed; return unwrapped rather than erroring
+		}
+		return &davStatWrappedFile{
+			File: f,
+			info: &davTitleFileInfo{FileInfo: innerInfo, name: node.title + ".md"},
+		}, nil
+	}
+
+	// ── Canonical note ID direct access ──────────────────────────────────────
+	// When a client accesses a note by its canonical ID (e.g. sync tools that
+	// remember canonical IDs, or test code), bypass the virtual tree and serve
+	// the underlying file directly.  Applies even when the virtual tree is active.
+	// This block runs BEFORE the new-file-create block so that a PUT to an
+	// existing canonical ID path overwrites the note in-place rather than minting
+	// a second canonical ID.
+	if validFileRegex.MatchString(rel) {
+		isNew := false
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+			if flag&os.O_CREATE != 0 {
+				if _, statErr := os.Stat(dfs.lib.FullPath(rel)); os.IsNotExist(statErr) {
+					isNew = true
+					if err := dfs.lib.CheckNoteQuota(rel, 0); err != nil {
+						return nil, &davQuotaError{reason: err.Error()}
+					}
+				}
+			}
+		}
+		f, err := dfs.inner.OpenFile(ctx, name, flag, perm)
+		if err != nil {
+			return nil, err
+		}
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+			truncated := flag&os.O_TRUNC != 0
+			return &davCommitFile{File: f, lib: dfs.lib, rel: rel, written: truncated, isNew: isNew}, nil
+		}
+		return f, nil
+	}
+
+	// ── New file create inside virtual directory ──────────────────────────────
+	// Path not in virtual tree; only proceed for write-with-create.
+	if flag&(os.O_CREATE) != 0 && vt.hasStructure {
+		return dfs.openNewVirtualFile(ctx, vt, cleanName, flag, perm)
+	}
+
+	// ── Legacy fallback (no structure) ────────────────────────────────────────
+	// Handles root-level files when structure is unavailable.
+	if !vt.hasStructure {
+		isRootMD := !strings.ContainsRune(rel, '/') && strings.HasSuffix(rel, ".md")
+		if isRootMD {
+			m := dfs.buildTitleMap()
+			name = m.translateToID(name)
+			rel = strings.TrimPrefix(name, "/")
+		}
+		isNew := false
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+			if flag&os.O_CREATE != 0 && strings.HasSuffix(rel, ".md") {
+				if _, statErr := os.Stat(dfs.lib.FullPath(rel)); os.IsNotExist(statErr) {
+					isNew = true
+					if err := dfs.lib.CheckNoteQuota(rel, 0); err != nil {
+						return nil, &davQuotaError{reason: err.Error()}
+					}
+				}
+			}
+		}
+		f, err := dfs.inner.OpenFile(ctx, name, flag, perm)
+		if err != nil {
+			return nil, err
+		}
+		if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
+			return &davDirFile{File: f, m: nil}, nil
+		}
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+			truncated := flag&os.O_TRUNC != 0
+			return &davCommitFile{File: f, lib: dfs.lib, rel: rel, written: truncated, isNew: isNew}, nil
+		}
+		return f, nil
+	}
+
+	return nil, os.ErrNotExist
+}
+
+// openNewVirtualFile creates a new canonical note file under the resolved
+// virtual parent directory and registers it in _structure.json.
+// name must be a clean path like "/ParentTitle/NoteTitle.md".
+func (dfs *davFileSystem) openNewVirtualFile(ctx context.Context, vt *davVirtualTree, name string, flag int, perm os.FileMode) (webdav.File, error) {
+	// Only .md files are handled as notes; non-.md assets are unsupported inside
+	// virtual dirs (the flat note store has no subdirectory for them).
+	if !strings.HasSuffix(name, ".md") {
+		return nil, os.ErrPermission
+	}
+
+	lastSlash := strings.LastIndex(name, "/")
+	if lastSlash < 0 {
+		return nil, os.ErrInvalid
+	}
+	parentPath := name[:lastSlash+1] // includes trailing /
+	filename := name[lastSlash+1:]
+	displayTitle := strings.TrimSuffix(filename, ".md")
+
+	// Determine parent ID.
+	var parentID string
+	if parentPath != "/" {
+		parentClean := strings.TrimSuffix(parentPath, "/")
+		parentNode, ok := vt.byPath[parentClean]
+		if !ok || !parentNode.isDir {
+			return nil, os.ErrNotExist // parent virtual dir does not exist
+		}
+		parentID = parentNode.id
+	}
+
+	newID := newCanonicalNoteID()
+	if err := dfs.lib.CheckNoteQuota(newID, 0); err != nil {
+		return nil, &davQuotaError{reason: err.Error()}
+	}
+
+	f, err := dfs.inner.OpenFile(ctx, "/"+newID, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	truncated := flag&os.O_TRUNC != 0
+	return &davNewNoteFile{
+		davCommitFile: davCommitFile{File: f, lib: dfs.lib, rel: newID, written: truncated, isNew: true},
+		parentID:      parentID,
+		displayTitle:  displayTitle,
+	}, nil
 }
 
 func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
-	name = normalizePath(name)
+	vt := dfs.buildVirtualTree()
+	name = dfs.normalizeDavPath(name, vt)
 	if !dfs.allowed(name) {
 		return os.ErrPermission
 	}
+
+	cleanName := "/" + strings.Trim(name, "/")
+
+	if vt.hasStructure {
+		node, ok := vt.byPath[cleanName]
+		if !ok {
+			// Canonical note ID: delete the physical file directly.
+			relName := strings.TrimPrefix(cleanName, "/")
+			if validFileRegex.MatchString(relName) {
+				err := dfs.inner.RemoveAll(ctx, cleanName)
+				if err == nil || os.IsNotExist(err) {
+					if err == nil {
+						dfs.lib.markPending(relName)
+						dfs.lib.reconcilePending.Store(true)
+					}
+					return nil
+				}
+				return err
+			}
+			// Not in virtual tree: nothing to delete (return nil — idempotent).
+			return nil
+		}
+
+		if node.isDir {
+			// Collect all note IDs in the subtree.
+			st := dfs.lib.GetStructureParsed()
+			var noteIDs []string
+			if st != nil {
+				noteIDs = collectSubtreeNoteIDs(node.id, st)
+			} else {
+				noteIDs = []string{node.id}
+			}
+
+			// Delete physical files.
+			for _, noteID := range noteIDs {
+				if err := dfs.inner.RemoveAll(ctx, "/"+noteID); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				dfs.lib.markPending(noteID)
+			}
+
+			// Remove from structure synchronously (fixes C-004).
+			if updateErr := dfs.lib.UpdateStructureFunc(func(s *Structure) {
+				for _, noteID := range noteIDs {
+					removeNoteFromStructure(s, noteID)
+				}
+				// Also remove the dir node itself from its parent if it's a non-.md folder ID.
+				if !strings.HasSuffix(node.id, ".md") {
+					removeNoteFromStructure(s, node.id)
+				}
+			}); updateErr != nil {
+				fmt.Fprintf(os.Stderr, "YinMo: WebDAV dir delete structure update failed: %v\n", updateErr)
+			}
+			dfs.lib.reconcilePending.Store(true)
+			return nil
+		}
+
+		// Single note file delete.
+		noteID := node.id
+		if err := dfs.inner.RemoveAll(ctx, "/"+noteID); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		// Update structure synchronously so the next PROPFIND does not see the
+		// deleted file (fixes C-004: was previously async via reconcilePending).
+		if updateErr := dfs.lib.UpdateStructureFunc(func(s *Structure) {
+			removeNoteFromStructure(s, noteID)
+		}); updateErr != nil {
+			fmt.Fprintf(os.Stderr, "YinMo: WebDAV file delete structure update failed: %v\n", updateErr)
+		}
+		dfs.lib.markPending(noteID)
+		dfs.lib.reconcilePending.Store(true)
+		return nil
+	}
+
+	// Fallback: no structure — use legacy title-map + inner delete.
 	m := dfs.buildTitleMap()
 	name = m.translateToID(name)
 	err := dfs.inner.RemoveAll(ctx, name)
@@ -284,20 +1046,125 @@ func (dfs *davFileSystem) RemoveAll(ctx context.Context, name string) error {
 }
 
 func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) error {
-	oldName = normalizePath(oldName)
-	newName = normalizePath(newName)
+	vt := dfs.buildVirtualTree()
+	oldName = dfs.normalizeDavPath(oldName, vt)
+	newName = dfs.normalizeDavPath(newName, vt)
 	if !dfs.allowed(oldName) || !dfs.allowed(newName) {
 		return os.ErrPermission
 	}
 
+	oldClean := "/" + strings.Trim(oldName, "/")
+	newClean := "/" + strings.Trim(newName, "/")
+
+	if vt.hasStructure {
+		oldNode, oldOK := vt.byPath[oldClean]
+		if !oldOK {
+			return os.ErrNotExist
+		}
+		if oldNode.isDir {
+			// Renaming a virtual directory: update structure.Titles for the dir node
+			// (and update H1 if it is a note).
+			newLastSlash := strings.LastIndex(newClean, "/")
+			newTitle := davSanitizeTitle(newClean[newLastSlash+1:])
+			if newTitle == "" {
+				newTitle = newClean[newLastSlash+1:]
+			}
+			if strings.HasSuffix(oldNode.id, ".md") {
+				if err := dfs.updateNoteH1(oldNode.id, newTitle); err != nil {
+					return err
+				}
+			}
+			return dfs.lib.UpdateStructureFunc(func(st *Structure) {
+				if st.Titles == nil {
+					st.Titles = make(map[string]string)
+				}
+				st.Titles[oldNode.id] = newTitle
+			})
+		}
+
+		// Single note rename or move.
+		noteID := oldNode.id
+
+		// Resolve old and new parent paths.
+		oldLastSlash := strings.LastIndex(oldClean, "/")
+		newLastSlash := strings.LastIndex(newClean, "/")
+		oldParentPath := oldClean[:oldLastSlash+1]
+		newParentPath := newClean[:newLastSlash+1]
+		newFilename := newClean[newLastSlash+1:]
+		newTitle := davSanitizeTitle(strings.TrimSuffix(newFilename, ".md"))
+		if newTitle == "" {
+			newTitle = strings.TrimSuffix(newFilename, ".md")
+		}
+
+		resolveParentID := func(parentPath string) string {
+			if parentPath == "/" {
+				return ""
+			}
+			parentClean := strings.TrimSuffix(parentPath, "/")
+			if n, ok := vt.byPath[parentClean]; ok {
+				return n.id
+			}
+			return ""
+		}
+		oldParentID := resolveParentID(oldParentPath)
+		newParentID := resolveParentID(newParentPath)
+
+		// Determine if this is a same-parent rename vs. a structural move.
+		sameParent := oldParentPath == newParentPath
+		if sameParent {
+			// Title rename: update H1 content and structure.Titles.
+			if err := dfs.updateNoteH1(noteID, newTitle); err != nil {
+				return err
+			}
+			return dfs.lib.UpdateStructureFunc(func(st *Structure) {
+				if st.Titles == nil {
+					st.Titles = make(map[string]string)
+				}
+				st.Titles[noteID] = newTitle
+			})
+		}
+
+		// Structural move: update parents and childOrder.
+		return dfs.lib.UpdateStructureFunc(func(st *Structure) {
+			// Remove from old parent.
+			if oldParentID == "" {
+				st.Order = removeFromStringSlice(st.Order, noteID)
+			} else if st.ChildOrder != nil {
+				st.ChildOrder[oldParentID] = removeFromStringSlice(st.ChildOrder[oldParentID], noteID)
+				if len(st.ChildOrder[oldParentID]) == 0 {
+					delete(st.ChildOrder, oldParentID)
+				}
+			}
+			if st.Parents != nil {
+				delete(st.Parents, noteID)
+			}
+			// Add to new parent.
+			if newParentID == "" {
+				st.Order = append(st.Order, noteID)
+			} else {
+				if st.ChildOrder == nil {
+					st.ChildOrder = make(map[string][]string)
+				}
+				if st.Parents == nil {
+					st.Parents = make(map[string]string)
+				}
+				st.ChildOrder[newParentID] = append(st.ChildOrder[newParentID], noteID)
+				st.Parents[noteID] = newParentID
+			}
+			// Update title.
+			if st.Titles == nil {
+				st.Titles = make(map[string]string)
+			}
+			st.Titles[noteID] = newTitle
+		})
+	}
+
+	// Fallback: no structure — use legacy title-map rename.
 	m := dfs.buildTitleMap()
 	oldTranslated := m.translateToID(oldName)
 	oldRel := strings.TrimPrefix(oldTranslated, "/")
 	newRel := strings.TrimPrefix(newName, "/")
 
-	// Title-rename: old path maps to a canonical ID and new path is a root-level .md.
-	// Implement as an H1 content update rather than a file-system rename so the
-	// canonical ID is preserved.
 	isOldCanonical := validFileRegex.MatchString(oldRel)
 	isNewRootMD := !strings.ContainsRune(newRel, '/') && strings.HasSuffix(newRel, ".md")
 
@@ -309,10 +1176,6 @@ func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) e
 		return dfs.updateNoteH1(oldRel, newTitle)
 	}
 
-	// Standard rename (non-canonical source, or subdirectory move).
-	// Translate newName through the title map so that renaming to an existing
-	// title name overwrites the correct canonical-ID file rather than creating
-	// a literal title-named file alongside it.
 	newTranslated := m.translateToID(newName)
 	newRel = strings.TrimPrefix(newTranslated, "/")
 	err := dfs.inner.Rename(ctx, oldTranslated, newTranslated)
@@ -327,25 +1190,55 @@ func (dfs *davFileSystem) Rename(ctx context.Context, oldName, newName string) e
 }
 
 func (dfs *davFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
-	name = normalizePath(name)
+	vt := dfs.buildVirtualTree()
+	name = dfs.normalizeDavPath(name, vt)
 	if !dfs.allowed(name) {
 		// Return ErrPermission (not ErrNotExist) so that the webdav PROPFIND
 		// walkFS silently skips blocked entries via handlePropfindError rather
 		// than aborting the response with "Internal Server Error".
 		return nil, os.ErrPermission
 	}
-	m := dfs.buildTitleMap()
-	translated := m.translateToID(name)
-	info, err := dfs.inner.Stat(ctx, translated)
-	if err != nil {
-		return nil, err
+
+	rel := strings.TrimPrefix(name, "/")
+	if rel == "" {
+		return dfs.inner.Stat(ctx, "/")
 	}
-	// If we translated the name, wrap FileInfo to return the title-based name.
-	if translated != name {
-		rel := strings.TrimPrefix(name, "/")
-		return &davTitleFileInfo{FileInfo: info, name: rel}, nil
+
+	cleanName := "/" + strings.Trim(name, "/")
+
+	if node, ok := vt.byPath[cleanName]; ok {
+		if node.isDir {
+			return &davVirtualDirInfo{name: node.title, modTime: node.modTime}, nil
+		}
+		// File: stat the underlying canonical file and wrap with virtual name.
+		info, err := dfs.inner.Stat(ctx, "/"+node.id)
+		if err != nil {
+			return nil, err
+		}
+		return &davTitleFileInfo{FileInfo: info, name: node.title + ".md"}, nil
 	}
-	return info, nil
+
+	// Not in virtual tree: for legacy fallback (no structure), attempt title→ID.
+	if !vt.hasStructure {
+		m := dfs.buildTitleMap()
+		translated := m.translateToID(name)
+		info, err := dfs.inner.Stat(ctx, translated)
+		if err != nil {
+			return nil, err
+		}
+		if translated != name {
+			rel := strings.TrimPrefix(name, "/")
+			return &davTitleFileInfo{FileInfo: info, name: rel}, nil
+		}
+		return info, nil
+	}
+
+	// Canonical note IDs are always accessible directly, even with virtual tree active.
+	if validFileRegex.MatchString(rel) {
+		return dfs.inner.Stat(ctx, cleanName)
+	}
+
+	return nil, os.ErrNotExist
 }
 
 // isBlockedSegment returns true for filename segments that must never be

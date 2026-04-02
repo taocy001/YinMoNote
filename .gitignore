@@ -17,6 +17,9 @@ backend/dist/*
 .claude/
 .gemini/
 
+# Internal architecture/audit documents (never publish)
+docs/arch/
+
 # Audit artifacts (may contain security-sensitive information)
 buglist.md
 

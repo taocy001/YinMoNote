@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -2944,8 +2945,9 @@ func TestWebDAV(t *testing.T) {
 		w := do("PROPFIND", "/dav/", body)
 		// 207 Multi-Status is the expected WebDAV response for PROPFIND.
 		assert.Equal(t, 207, w.Code)
-		// The note file should appear in the listing.
-		assert.Contains(t, w.Body.String(), noteName)
+		// The note should appear by its display name (title-based), not its canonical ID.
+		// WebDAV clients receive human-readable names; canonical IDs are an implementation detail.
+		assert.Contains(t, w.Body.String(), "Hello.md")
 		// _structure.json must NOT appear.
 		assert.NotContains(t, w.Body.String(), "_structure.json")
 	})
@@ -3694,4 +3696,390 @@ func TestDavServerEncryptBlock(t *testing.T) {
 		davH.ServeHTTP(w, req)
 		assert.Contains(t, w.Body.String(), "server-side encryption")
 	})
+}
+
+// TestDavVirtualTree verifies the WebDAV virtual directory hierarchy that maps
+// _structure.json parent-child relationships to WebDAV subdirectories.
+//
+// Notes with children appear as virtual directories; child notes appear as
+// files inside those directories. All operations (GET, PUT, DELETE, MKCOL,
+// RENAME) on virtual paths are reflected in _structure.json.
+func TestDavVirtualTree(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// vtSetup creates a NoteLibrary with two notes: a parent note "ProjectA"
+	// (20260101aaaaaaaaaaaaaa01.md) with one child "Task One"
+	// (20260101aaaaaaaaaaaaaa02.md), plus an orphan note
+	// (20260101aaaaaaaaaaaaaa03.md) not in the structure.
+	vtSetup := func(t *testing.T) (*NoteLibrary, http.Handler) {
+		t.Helper()
+		dir := t.TempDir()
+		lib, err := NewNoteLibrary(dir, "assets", filepath.Join(t.TempDir(), "config.json"))
+		require.NoError(t, err)
+
+		parentID := "20260101aaaaaaaaaaaaaa01.md"
+		childID := "20260101aaaaaaaaaaaaaa02.md"
+		orphanID := "20260101aaaaaaaaaaaaaa03.md"
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, parentID), []byte("# ProjectA\nParent note."), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, childID), []byte("# Task One\nChild note."), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, orphanID), []byte("# Orphan\nNot in structure."), 0600))
+
+		st := Structure{
+			Order:      []string{parentID},
+			Parents:    map[string]string{childID: parentID},
+			ChildOrder: map[string][]string{parentID: {childID}},
+			Titles:     map[string]string{parentID: "ProjectA", childID: "Task One"},
+			Tags:       map[string][]string{childID: {"todo"}},
+		}
+		data, _ := json.Marshal(st)
+		require.NoError(t, lib.SaveStructure(string(data)))
+
+		srv := &Server{Library: lib}
+		return lib, srv.newDavHandler()
+	}
+
+	davDo := func(davH http.Handler, method, path, body string) *httptest.ResponseRecorder {
+		var b *strings.Reader
+		if body != "" {
+			b = strings.NewReader(body)
+		} else {
+			b = strings.NewReader("")
+		}
+		req, _ := http.NewRequest(method, path, b)
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		return w
+	}
+
+	// ── PROPFIND ────────────────────────────────────────────────────────────────
+
+	t.Run("PROPFIND root shows virtual subdirectory for parent note", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		w := davDo(davH, "PROPFIND", "/dav/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Equal(t, 207, w.Code)
+		body := w.Body.String()
+		// Parent note appears as a virtual directory.
+		assert.Contains(t, body, "ProjectA")
+		// Orphan note (not in structure order) also appears at root.
+		assert.Contains(t, body, "Orphan")
+		// Canonical IDs must NOT appear directly in root listing.
+		assert.NotContains(t, body, "20260101aaaaaaaaaaaaaa01.md")
+		assert.NotContains(t, body, "20260101aaaaaaaaaaaaaa02.md")
+	})
+
+	t.Run("PROPFIND virtual subdir lists children and folder-note file", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		w := davDo(davH, "PROPFIND", "/dav/ProjectA/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Equal(t, 207, w.Code)
+		body := w.Body.String()
+		// Child note appears inside the virtual dir.
+		assert.Contains(t, body, "Task One")
+		// Parent note also appears as a .md file inside its own dir (folder-note pattern).
+		assert.Contains(t, body, "ProjectA")
+	})
+
+	// ── GET ─────────────────────────────────────────────────────────────────────
+
+	t.Run("GET child note via virtual path returns content", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "GET", "/dav/ProjectA/Task One.md", "")
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "# Task One\nChild note.", w.Body.String())
+		_ = lib // suppress unused warning
+	})
+
+	t.Run("GET note via canonical ID still works with structure active", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "GET", "/dav/20260101aaaaaaaaaaaaaa02.md", "")
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "# Task One\nChild note.", w.Body.String())
+		_ = lib
+	})
+
+	t.Run("GET orphan note at root virtual path", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		w := davDo(davH, "GET", "/dav/Orphan.md", "")
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "# Orphan\nNot in structure.", w.Body.String())
+	})
+
+	// ── PUT ─────────────────────────────────────────────────────────────────────
+
+	t.Run("PUT to canonical ID overwrites note in-place", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		req, _ := http.NewRequest("PUT", "/dav/20260101aaaaaaaaaaaaaa02.md", strings.NewReader("# Updated"))
+		req.ContentLength = int64(len("# Updated"))
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.True(t, w.Code == http.StatusCreated || w.Code == http.StatusNoContent,
+			"PUT to canonical ID should succeed, got %d", w.Code)
+		data, _ := os.ReadFile(filepath.Join(lib.DataDir, "20260101aaaaaaaaaaaaaa02.md"))
+		assert.Equal(t, "# Updated", string(data))
+	})
+
+	t.Run("PUT new note at root creates canonical note and adds to structure", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		req, _ := http.NewRequest("PUT", "/dav/New Note.md", strings.NewReader("# New Note\nContent."))
+		req.ContentLength = int64(len("# New Note\nContent."))
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.True(t, w.Code == http.StatusCreated || w.Code == http.StatusNoContent,
+			"PUT new note at root should succeed, got %d", w.Code)
+
+		// A new canonical-ID file must have been created.
+		entries, _ := os.ReadDir(lib.DataDir)
+		count := 0
+		for _, e := range entries {
+			if validFileRegex.MatchString(e.Name()) {
+				count++
+			}
+		}
+		// 3 original + 1 new = 4 canonical files
+		assert.Equal(t, 4, count, "expected 4 canonical note files after PUT")
+	})
+
+	// ── DELETE ───────────────────────────────────────────────────────────────────
+
+	t.Run("DELETE canonical ID removes file and triggers reconcile", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "DELETE", "/dav/20260101aaaaaaaaaaaaaa03.md", "")
+		assert.Equal(t, http.StatusNoContent, w.Code)
+		_, err := os.Stat(filepath.Join(lib.DataDir, "20260101aaaaaaaaaaaaaa03.md"))
+		assert.True(t, os.IsNotExist(err), "orphan note should be deleted from disk")
+	})
+
+	t.Run("DELETE virtual directory removes subtree from disk and structure", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "DELETE", "/dav/ProjectA", "")
+		assert.Equal(t, http.StatusNoContent, w.Code)
+
+		// Both the parent note and child note should be deleted from disk.
+		_, err1 := os.Stat(filepath.Join(lib.DataDir, "20260101aaaaaaaaaaaaaa01.md"))
+		_, err2 := os.Stat(filepath.Join(lib.DataDir, "20260101aaaaaaaaaaaaaa02.md"))
+		assert.True(t, os.IsNotExist(err1), "parent note should be deleted")
+		assert.True(t, os.IsNotExist(err2), "child note should be deleted")
+
+		// Structure should not reference the deleted notes.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		for _, id := range st.Order {
+			assert.NotEqual(t, "20260101aaaaaaaaaaaaaa01.md", id)
+			assert.NotEqual(t, "20260101aaaaaaaaaaaaaa02.md", id)
+		}
+	})
+
+	t.Run("DELETE child note via virtual path removes from disk and structure", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "DELETE", "/dav/ProjectA/Task One.md", "")
+		assert.Equal(t, http.StatusNoContent, w.Code)
+
+		_, err := os.Stat(filepath.Join(lib.DataDir, "20260101aaaaaaaaaaaaaa02.md"))
+		assert.True(t, os.IsNotExist(err), "child note should be deleted from disk")
+
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		if st.ChildOrder != nil {
+			for _, child := range st.ChildOrder["20260101aaaaaaaaaaaaaa01.md"] {
+				assert.NotEqual(t, "20260101aaaaaaaaaaaaaa02.md", child)
+			}
+		}
+	})
+
+	// ── MKCOL ────────────────────────────────────────────────────────────────────
+
+	t.Run("MKCOL creates folder note at root and adds to structure", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "MKCOL", "/dav/NewFolder", "")
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// A new canonical note must exist on disk.
+		entries, _ := os.ReadDir(lib.DataDir)
+		var newID string
+		for _, e := range entries {
+			if validFileRegex.MatchString(e.Name()) {
+				data, _ := os.ReadFile(filepath.Join(lib.DataDir, e.Name()))
+				if strings.Contains(string(data), "# NewFolder") {
+					newID = e.Name()
+					break
+				}
+			}
+		}
+		require.NotEmpty(t, newID, "folder note file should exist on disk")
+
+		// The new note should appear in the structure order.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		found := false
+		for _, id := range st.Order {
+			if id == newID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "new folder note should be in structure order")
+	})
+
+	t.Run("MKCOL inside virtual dir creates nested folder note", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "MKCOL", "/dav/ProjectA/SubDir", "")
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// Verify the new note is a child of the parent in the structure.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		parentID := "20260101aaaaaaaaaaaaaa01.md"
+		children := st.ChildOrder[parentID]
+		require.NotEmpty(t, children, "parent should have at least one child after MKCOL")
+
+		// Find the newly created note.
+		var newID string
+		for _, child := range children {
+			if child != "20260101aaaaaaaaaaaaaa02.md" {
+				newID = child
+				break
+			}
+		}
+		require.NotEmpty(t, newID, "new nested folder note should be a child of parent")
+
+		// Verify the file content contains the H1 title.
+		data, _ := os.ReadFile(filepath.Join(lib.DataDir, newID))
+		assert.Contains(t, string(data), "# SubDir")
+		_ = lib
+	})
+
+	// ── RENAME ───────────────────────────────────────────────────────────────────
+
+	t.Run("RENAME note in same virtual dir updates title in structure", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		req, _ := http.NewRequest("MOVE", "/dav/ProjectA/Task%20One.md", strings.NewReader(""))
+		req.Header.Set("Destination", "/dav/ProjectA/Task%20Two.md")
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// Title in structure should be updated.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		assert.Equal(t, "Task Two", st.Titles["20260101aaaaaaaaaaaaaa02.md"])
+
+		// File content H1 should be updated too.
+		data, _ := os.ReadFile(filepath.Join(lib.DataDir, "20260101aaaaaaaaaaaaaa02.md"))
+		assert.Contains(t, string(data), "# Task Two")
+	})
+
+	t.Run("RENAME note to different parent moves it in structure", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		req, _ := http.NewRequest("MOVE", "/dav/ProjectA/Task%20One.md", strings.NewReader(""))
+		req.Header.Set("Destination", "/dav/Task%20One.md")
+		w := httptest.NewRecorder()
+		davH.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		childID := "20260101aaaaaaaaaaaaaa02.md"
+
+		// Note should be at root level now.
+		found := false
+		for _, id := range st.Order {
+			if id == childID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "moved note should appear in root order")
+
+		// Note should no longer be a child of the parent.
+		if st.ChildOrder != nil {
+			for _, child := range st.ChildOrder["20260101aaaaaaaaaaaaaa01.md"] {
+				assert.NotEqual(t, childID, child, "moved note should not be in old parent's children")
+			}
+		}
+
+		// Parents entry should be removed.
+		if st.Parents != nil {
+			_, hasParent := st.Parents[childID]
+			assert.False(t, hasParent, "moved note should have no parent entry")
+		}
+	})
+
+	// ── Structure preservation (C-001 fix) ───────────────────────────────────────
+
+	t.Run("C-001: reconcileStructure preserves Titles and Tags fields", func(t *testing.T) {
+		lib, _ := vtSetup(t)
+		// Force a reconcile.
+		lib.reconcileStructure()
+
+		// Read back and verify Titles and Tags are intact.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		assert.Equal(t, "ProjectA", st.Titles["20260101aaaaaaaaaaaaaa01.md"],
+			"Titles should survive reconcileStructure")
+		assert.Equal(t, "Task One", st.Titles["20260101aaaaaaaaaaaaaa02.md"],
+			"Titles should survive reconcileStructure")
+		assert.Equal(t, []string{"todo"}, st.Tags["20260101aaaaaaaaaaaaaa02.md"],
+			"Tags should survive reconcileStructure")
+	})
+
+	// ── Title dedup determinism (C-006 fix) ──────────────────────────────────────
+
+	t.Run("C-006: title dedup ordering is deterministic (stable across calls)", func(t *testing.T) {
+		dir := t.TempDir()
+		lib, err := NewNoteLibrary(dir, "assets", filepath.Join(t.TempDir(), "config.json"))
+		require.NoError(t, err)
+
+		// Two notes with identical titles (both "Note") and different canonical IDs.
+		// The earlier canonical ID (alphabetically) should always get the plain name,
+		// the later one should get "(2)".
+		early := "20260101aaaabbbbccccdddd.md"
+		late := "20260102aaaabbbbccccdddd.md"
+		require.NoError(t, os.WriteFile(filepath.Join(dir, early), []byte("# Note\nEarly."), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, late), []byte("# Note\nLate."), 0600))
+
+		srv := &Server{Library: lib}
+		davH := srv.newDavHandler()
+
+		// Call PROPFIND multiple times; the mapping must be identical each time.
+		names1 := propfindRootNames(t, davH)
+		names2 := propfindRootNames(t, davH)
+		assert.Equal(t, names1, names2, "virtual root listing must be deterministic")
+
+		// "Note.md" (no suffix) must map to the alphabetically earlier ID.
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/dav/Note.md", strings.NewReader(""))
+		davH.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Early", "Note.md should map to the earlier canonical ID")
+	})
+}
+
+// propfindRootNames sends PROPFIND Depth:1 to /dav/ and returns the sorted
+// list of href path segments from the multi-status response body.
+// The webdav library emits single-line XML so we split on the tag boundary
+// rather than on newlines.
+func propfindRootNames(t *testing.T, davH http.Handler) []string {
+	t.Helper()
+	req, _ := http.NewRequest("PROPFIND", "/dav/", strings.NewReader(
+		`<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`))
+	req.Header.Set("Depth", "1")
+	w := httptest.NewRecorder()
+	davH.ServeHTTP(w, req)
+	require.Equal(t, 207, w.Code)
+
+	body := w.Body.String()
+	var names []string
+	for _, part := range strings.Split(body, "<D:href>") {
+		idx := strings.Index(part, "</D:href>")
+		if idx < 0 {
+			continue
+		}
+		href := strings.TrimSpace(part[:idx])
+		seg := strings.TrimPrefix(href, "/dav/")
+		if seg != "" && seg != "/" {
+			names = append(names, seg)
+		}
+	}
+	sort.Strings(names)
+	return names
 }

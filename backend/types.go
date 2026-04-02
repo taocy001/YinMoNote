@@ -21,12 +21,18 @@ type TrashEntry struct {
 }
 
 // Structure defines the organizational hierarchy of notes and folders.
+// All fields mirror the LibraryStructure interface in the frontend so that
+// UpdateStructureFunc round-trips the full JSON blob without data loss.
 type Structure struct {
-	Order      []string            `json:"order"`                // IDs of top-level items
-	Parents    map[string]string   `json:"parents"`              // Mapping of child ID to parent ID
-	ChildOrder map[string][]string `json:"childOrder"`           // Mapping of parent ID to list of child IDs
-	Trash      []TrashEntry        `json:"trash,omitempty"`      // Soft-deleted notes awaiting permanent removal
-	Dark       bool                `json:"dark"`                 // User interface theme preference
+	Order        []string            `json:"order"`                        // IDs of top-level items
+	Parents      map[string]string   `json:"parents"`                      // child ID → parent ID
+	ChildOrder   map[string][]string `json:"childOrder"`                   // parent ID → ordered child IDs
+	Titles       map[string]string   `json:"titles,omitempty"`             // note/folder ID → display title
+	Tags         map[string][]string `json:"tags,omitempty"`               // note ID → tag list
+	Dark         bool                `json:"dark"`                         // user interface theme preference
+	Pinned       []string            `json:"pinned,omitempty"`             // pinned note IDs (shown first)
+	Trash        []TrashEntry        `json:"trash,omitempty"`              // soft-deleted notes
+	CommitLabels map[string]string   `json:"commitLabels,omitempty"`       // note ID → custom commit message label
 }
 
 // CommitInfo provides information about a specific git commit.

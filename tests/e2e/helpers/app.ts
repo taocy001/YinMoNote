@@ -62,13 +62,26 @@ export async function freshPage(page: Page): Promise<void> {
 // ─── Language ─────────────────────────────────────────────────────────────────
 
 /**
- * Ensure the app is displaying in English by setting the localStorage lang key.
- * Must be called before or after freshPage — if called after, a reload is needed
- * for the change to take effect.
+ * Ensure the app is displaying in English.
+ *
+ * The server config persists a `lang` field that the app reads on startup via
+ * loadConfig() and applies with setLang(cfg.lang), overriding localStorage.
+ * We must update BOTH the server config and localStorage so that the language
+ * stays English after the next page load / loadConfig call.
  */
 export async function switchToEnglish(page: Page): Promise<void> {
+  // Update the server config so loadConfig() reads lang='en' after the reload.
+  await page.request.put(`${BASE_URL}/api/config`, {
+    data: { lang: 'en' },
+    headers: { 'Content-Type': 'application/json' },
+  }).catch(() => {}) // best-effort: server may not be ready during very first call
   await page.evaluate(() => localStorage.setItem('lang', 'en'))
   await page.reload({ waitUntil: 'domcontentloaded' })
+  // Wait for loadConfig() to complete so lang is confirmed 'en' before proceeding.
+  // Without this, a race between the in-flight loadConfig() (which may still return
+  // lang='zh' if the PUT /api/config response hasn't propagated yet) and the module
+  // initialisation from localStorage can leave lang as 'zh' in the reactive state.
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
 }
 
 // ─── Unlock Flows ─────────────────────────────────────────────────────────────

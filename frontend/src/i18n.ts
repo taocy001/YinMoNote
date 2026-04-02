@@ -394,7 +394,7 @@ const en = {
   toggleTheme: 'Toggle theme',
   collapseSidebar: 'Collapse',
   expandSidebar: 'Expand',
-  createSubNote: 'Sub-note',
+  createSubNote: 'Add sub-note',
   importNotes: 'Import',
   importFiles: 'Import files',
   importFolder: 'Import folder',
