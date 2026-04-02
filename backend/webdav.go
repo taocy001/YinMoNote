@@ -718,13 +718,19 @@ func (dfs *davFileSystem) Mkdir(ctx context.Context, name string, perm os.FileMo
 			if st.Titles == nil {
 				st.Titles = make(map[string]string)
 			}
+			if st.ChildOrder == nil {
+				st.ChildOrder = make(map[string][]string)
+			}
 			st.Titles[newID] = dirTitle
+			// Mark as a virtual directory by adding an empty ChildOrder entry.
+			// buildVirtualTree uses "id in ChildOrder" to decide dir vs file;
+			// without this entry the new folder would render as a flat .md file.
+			if _, exists := st.ChildOrder[newID]; !exists {
+				st.ChildOrder[newID] = []string{}
+			}
 			if parentID == "" {
 				st.Order = append(st.Order, newID)
 			} else {
-				if st.ChildOrder == nil {
-					st.ChildOrder = make(map[string][]string)
-				}
 				if st.Parents == nil {
 					st.Parents = make(map[string]string)
 				}

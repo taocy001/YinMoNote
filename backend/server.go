@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -164,6 +165,16 @@ func (s *Server) SetupRouter() *gin.Engine {
 // When enabled, WebDAV paths (/dav and /dav/*) are dispatched before Gin so
 // that WebDAV methods (PROPFIND, MKCOL, COPY, MOVE, LOCK, UNLOCK) are never
 // rejected by Gin's method-not-allowed check.
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (lw *loggingResponseWriter) WriteHeader(code int) {
+	lw.status = code
+	lw.ResponseWriter.WriteHeader(code)
+}
+
 func (s *Server) buildHandler() http.Handler {
 	ginH := s.SetupRouter()
 	if os.Getenv("WEBDAV_DISABLED") == "1" {
@@ -172,7 +183,9 @@ func (s *Server) buildHandler() http.Handler {
 	davH := s.newDavHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/dav" || strings.HasPrefix(r.URL.Path, "/dav/") {
-			davH.ServeHTTP(w, r)
+			lw := &loggingResponseWriter{ResponseWriter: w, status: 200}
+			davH.ServeHTTP(lw, r)
+			log.Printf("[DAV] %s %s → %d", r.Method, r.URL.Path, lw.status)
 			return
 		}
 		ginH.ServeHTTP(w, r)
