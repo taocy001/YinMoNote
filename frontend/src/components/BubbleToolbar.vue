@@ -56,7 +56,7 @@
         <button
           v-for="btn in inlineButtons"
           :key="btn.key"
-          class="px-3 py-2.5 text-sm transition-colors rounded-lg"
+          class="px-3 py-2.5 text-base transition-colors rounded-lg"
           :style="btn.isActive() ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           :class="btn.cls"
           @mousedown.prevent
@@ -99,7 +99,7 @@
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('link')) (e.currentTarget as HTMLElement).style.background='transparent' }"
         ><Link :size="15" /></button>
         <button
-          class="px-3 py-2.5 text-xs font-mono transition-colors rounded-lg"
+          class="px-3 py-2.5 text-sm font-mono transition-colors rounded-lg"
           :style="props.editor?.isActive('code') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           @mousedown.prevent
           @click="props.editor?.chain().focus().toggleCode().run()"
@@ -111,7 +111,7 @@
 
         <!-- Group 5: Superscript, subscript -->
         <button
-          class="px-3 py-2.5 text-xs transition-colors rounded-lg"
+          class="px-3 py-2.5 text-sm transition-colors rounded-lg"
           :style="props.editor?.isActive('superscript') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           @mousedown.prevent
           @click="props.editor?.chain().focus().toggleSuperscript().run()"
@@ -119,7 +119,7 @@
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('superscript')) (e.currentTarget as HTMLElement).style.background='transparent' }"
         >X<sup>2</sup></button>
         <button
-          class="px-3 py-2.5 text-xs transition-colors rounded-lg"
+          class="px-3 py-2.5 text-sm transition-colors rounded-lg"
           :style="props.editor?.isActive('subscript') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           @mousedown.prevent
           @click="props.editor?.chain().focus().toggleSubscript().run()"
@@ -177,7 +177,7 @@
         <button
           v-for="c in textColors"
           :key="c.value"
-          class="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+          class="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
           :style="{ background: c.value, borderColor: activeTextColor === c.value ? 'var(--accent)' : 'transparent' }"
           :title="c.label"
           @mousedown.prevent
@@ -191,13 +191,13 @@
           @click="applyTextColor(null)"
         ><Ban :size="10" /></button>
       </div>
-      <div class="border-t mx-2" style="border-color: var(--border);"></div>
+      <div class="border-t mx-3" style="border-color: var(--border);"></div>
       <div class="px-3 pt-2 pb-1 text-xs font-medium" style="color: var(--text-muted);">{{ t.bgColor }}</div>
       <div class="px-3 pb-2.5 flex items-center gap-1.5 flex-wrap">
         <button
           v-for="c in bgColors"
           :key="c.value"
-          class="w-5 h-5 rounded border-2 transition-transform hover:scale-110"
+          class="w-6 h-6 rounded border-2 transition-transform hover:scale-110"
           :style="{ background: c.value, borderColor: activeBgColor === c.value ? 'var(--accent)' : 'transparent' }"
           :title="c.label"
           @mousedown.prevent

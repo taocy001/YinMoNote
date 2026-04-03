@@ -61,7 +61,7 @@
         </div>
       </div>
 
-      <div class="border-t mx-2" style="border-color: var(--border);"></div>
+      <div class="border-t mx-3" style="border-color: var(--border);"></div>
 
       <!-- 2. Alignment row → opens submenu -->
       <div class="px-1 pt-0.5">
@@ -157,7 +157,7 @@
         <button
           v-for="c in textColors"
           :key="c.value"
-          class="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+          class="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
           :style="{ background: c.value, borderColor: currentTextColor === c.value ? 'var(--accent)' : 'transparent' }"
           :title="c.label"
           @click="applyTextColor(c.value)"
@@ -169,13 +169,13 @@
           @click="applyTextColor(null)"
         ><Ban :size="10" /></button>
       </div>
-      <div class="border-t mx-2" style="border-color: var(--border);"></div>
+      <div class="border-t mx-3" style="border-color: var(--border);"></div>
       <div class="px-3 pt-2 pb-1 text-xs font-medium" style="color: var(--text-muted);">{{ t.bgColor }}</div>
       <div class="px-3 pb-2 flex items-center gap-1.5 flex-wrap">
         <button
           v-for="c in bgColors"
           :key="c.value"
-          class="w-5 h-5 rounded border-2 transition-transform hover:scale-110"
+          class="w-6 h-6 rounded border-2 transition-transform hover:scale-110"
           :style="{ background: c.value, borderColor: currentBgColor === c.value ? 'var(--accent)' : 'transparent' }"
           :title="c.label"
           @click="applyBgColor(c.value)"
@@ -238,7 +238,7 @@
           @mouseenter="slashSelectedIdx = i"
           @mouseleave="e => { if (slashSelectedIdx !== i) (e.currentTarget as HTMLElement).style.background='transparent' }"
         >
-          <span class="w-7 h-7 flex items-center justify-center rounded-lg text-xs font-bold shrink-0" style="background: var(--bg-app); color: var(--text-secondary);">{{ cmd.icon }}</span>
+          <span class="w-8 h-8 flex items-center justify-center rounded-lg text-sm shrink-0" :style="slashIconStyle(cmd.id)">{{ cmd.icon }}</span>
           <div class="min-w-0 text-left">
             <div class="text-sm font-medium truncate" style="color: var(--text-primary);">{{ cmd.title }}</div>
             <div class="text-xs truncate" style="color: var(--text-muted);">{{ cmd.desc }}</div>
@@ -764,6 +764,22 @@ const closeSlashMenu = () => {
   slashMenuVisible.value = false
   slashQuery.value = ''
   slashFromHover = false
+}
+
+// Returns background + text color for each slash command category icon box.
+const slashIconStyle = (id: string): string => {
+  if (/^h[1-6]$/.test(id))      return 'background:rgba(59,130,246,0.12);color:#3b82f6'
+  if (id === 'text' || id === 'hr') return 'background:var(--bg-hover);color:var(--text-secondary)'
+  if (id === 'ul' || id === 'ol' || id === 'todo') return 'background:rgba(34,197,94,0.12);color:#22c55e'
+  if (id === 'code' || id === 'math' || id === 'diagram') return 'background:rgba(107,114,128,0.14);color:var(--text-secondary)'
+  if (id === 'callout-info')    return 'background:rgba(59,130,246,0.12);color:#3b82f6'
+  if (id === 'callout-warning') return 'background:rgba(249,115,22,0.12);color:#f97316'
+  if (id === 'callout-tip')     return 'background:rgba(34,197,94,0.12);color:#22c55e'
+  if (id === 'callout-danger')  return 'background:rgba(239,68,68,0.12);color:#ef4444'
+  if (id === 'quote')  return 'background:rgba(139,92,246,0.12);color:#8b5cf6'
+  if (id === 'toggle') return 'background:rgba(249,115,22,0.12);color:#f97316'
+  if (id === 'table')  return 'background:rgba(59,130,246,0.10);color:#3b82f6'
+  return 'background:var(--bg-hover);color:var(--text-secondary)'
 }
 
 const adjustSlashMenuPos = () => {
