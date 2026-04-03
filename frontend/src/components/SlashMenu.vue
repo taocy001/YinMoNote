@@ -214,7 +214,7 @@
     <div
       v-if="tooltip"
       class="fixed z-[200] pointer-events-none px-2 py-1 rounded-md text-xs whitespace-nowrap"
-      style="background: rgba(0,0,0,0.72); color: #fff; transform: translateX(-50%);"
+      style="background: rgba(22,22,22,0.92); color: #fff; transform: translateX(-50%);"
       :style="{ top: tooltip.y + 'px', left: tooltip.centerX + 'px' }"
     >{{ tooltip.text }}</div>
 

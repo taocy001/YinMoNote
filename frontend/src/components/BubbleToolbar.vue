@@ -133,7 +133,7 @@
     <div
       v-if="tooltip && bubbleVisible"
       class="fixed z-[60] pointer-events-none px-2 py-1 text-xs rounded-md whitespace-nowrap"
-      style="background: rgba(0,0,0,0.72); color: #fff; transform: translateX(-50%);"
+      style="background: rgba(22,22,22,0.92); color: #fff; transform: translateX(-50%);"
       :style="{ top: tooltip.y + 'px', left: tooltip.centerX + 'px' }"
     >{{ tooltip.text }}</div>
 
