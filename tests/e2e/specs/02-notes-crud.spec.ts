@@ -112,11 +112,12 @@ test.describe('Notes – CRUD', () => {
 
   // ── Delete (confirm) ─────────────────────────────────────────────────────
 
-  test('hover → X button → confirm modal visible', async ({ unlockedPage: page }) => {
+  test('hover → "…" menu → delete button → confirm modal visible', async ({ unlockedPage: page }) => {
     const title = await createAndSaveNote(page, 'HoverDelete')
     const noteItem = page.locator('[data-testid="note-item"]').filter({ hasText: title })
     await noteItem.hover()
-    await noteItem.locator('[data-testid="note-delete-btn"]').click()
+    await noteItem.locator('[data-testid="note-more-btn"]').click()
+    await page.locator('[data-testid="note-delete-btn"]').click()
     await expect(page.locator('[data-testid="delete-confirm-btn"]')).toBeVisible()
     await expect(page.locator('[data-testid="delete-cancel-btn"]')).toBeVisible()
   })
@@ -125,7 +126,8 @@ test.describe('Notes – CRUD', () => {
     const title = await createAndSaveNote(page, 'DeleteConfirm')
     const noteItem = page.locator('[data-testid="note-item"]').filter({ hasText: title })
     await noteItem.hover()
-    await noteItem.locator('[data-testid="note-delete-btn"]').click()
+    await noteItem.locator('[data-testid="note-more-btn"]').click()
+    await page.locator('[data-testid="note-delete-btn"]').click()
     await page.locator('[data-testid="delete-confirm-btn"]').click()
     // Note must disappear from the sidebar
     await expect(noteItem).not.toBeVisible({ timeout: 8_000 })
@@ -137,7 +139,8 @@ test.describe('Notes – CRUD', () => {
     const title = await createAndSaveNote(page, 'DeleteCancel')
     const noteItem = page.locator('[data-testid="note-item"]').filter({ hasText: title })
     await noteItem.hover()
-    await noteItem.locator('[data-testid="note-delete-btn"]').click()
+    await noteItem.locator('[data-testid="note-more-btn"]').click()
+    await page.locator('[data-testid="note-delete-btn"]').click()
     await page.locator('[data-testid="delete-cancel-btn"]').click()
     // Note must still be present
     await expect(noteItem).toBeVisible()

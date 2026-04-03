@@ -1,20 +1,22 @@
 <template>
   <div
-    data-testid="editor-root"
     ref="editorRoot"
+    data-testid="editor-root"
     :class="['relative flex flex-col h-full', isFocusMode ? 'focus-mode' : '']"
     style="background: var(--bg-editor); color: var(--text-primary);"
     @mouseleave="slashMenuRef?.scheduleHideHoverCtrl()"
   >
     <!-- Desktop header — when TOC is open the left 192px shares the TOC panel background,
          creating a unified visual column instead of a color break at the panel seam. -->
-    <div class="hidden md:flex items-center justify-between px-4 py-2 shrink-0 focus-mode-hide"
+    <div
+class="hidden md:flex items-center justify-between px-4 py-2 shrink-0 focus-mode-hide"
       style="background: var(--bg-editor); border-bottom: 1px solid var(--border);">
       <div class="flex items-center gap-2">
         <!-- TOC button — leftmost -->
-        <button data-testid="toc-btn" @click="toggleToc" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
-          :style="showToc ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
-          :title="t.toc">
+        <button
+data-testid="toc-btn" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" :style="showToc ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
+          :title="t.toc"
+          @click="toggleToc">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M2 7h7M2 10.5h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
         </button>
         <!-- Word count (subtle) -->
@@ -27,8 +29,8 @@
           class="flex items-center gap-1.5 ts-xs font-medium transition-all rounded-md"
           :class="(saveStatus === 'dirty' || saveStatus === 'error') ? 'cursor-pointer px-1.5 py-0.5 active:scale-[0.97]' : ''"
           :style="saveStatus === 'dirty' ? saveStatusStyle + 'background: rgba(217,119,6,0.08);' : saveStatus === 'error' ? saveStatusStyle + 'background: rgba(220,38,38,0.08);' : saveStatusStyle"
-          @click="(saveStatus === 'dirty' || saveStatus === 'error') ? doSave() : undefined"
           :title="saveStatus === 'error' ? lastSaveError : saveStatus === 'dirty' ? (t.unsaved as string) : undefined"
+          @click="(saveStatus === 'dirty' || saveStatus === 'error') ? doSave() : undefined"
         >
           <div class="w-1.5 h-1.5 rounded-full" :class="saveStatus === 'saving' ? 'animate-pulse' : ''" :style="saveDotStyle"></div>
           <span>{{ statusText }}</span>
@@ -36,66 +38,74 @@
       </div>
       <div class="flex items-center gap-0.5">
         <!-- Export dropdown -->
-        <div class="relative" ref="exportMenuRef">
-          <button data-testid="export-btn" @click="showExportMenu = !showExportMenu" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
-            :style="showExportMenu ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
-            :title="t.exportMenu">
+        <div ref="exportMenuRef" class="relative">
+          <button
+data-testid="export-btn" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" :style="showExportMenu ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
+            :title="t.exportMenu"
+            @click="showExportMenu = !showExportMenu">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v2h10v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <!-- Dropdown -->
           <div v-if="showExportMenu" class="absolute right-0 mt-1 w-40 rounded-xl overflow-hidden z-50 anim-pop-in" style="background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-md);">
-            <button @click="exportHTML(); showExportMenu = false" class="w-full text-left px-4 py-2.5 ts-sm transition-all" style="color: var(--text-secondary);"
+            <button
+class="w-full text-left px-4 py-2.5 ts-sm transition-all" style="color: var(--text-secondary);" @click="exportHTML(); showExportMenu = false"
               @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'" @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'">{{ t.exportHTML }}</button>
-            <button @click="exportPDF(); showExportMenu = false" class="w-full text-left px-4 py-2.5 ts-sm transition-all" style="color: var(--text-secondary); border-top: 1px solid var(--border);"
+            <button
+class="w-full text-left px-4 py-2.5 ts-sm transition-all" style="color: var(--text-secondary); border-top: 1px solid var(--border);" @click="exportPDF(); showExportMenu = false"
               @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'" @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'">{{ t.exportPDF }}</button>
-            <button @click="exportMarkdown(); showExportMenu = false" class="w-full text-left px-4 py-2.5 ts-sm transition-all" style="color: var(--text-secondary); border-top: 1px solid var(--border);"
+            <button
+class="w-full text-left px-4 py-2.5 ts-sm transition-all" style="color: var(--text-secondary); border-top: 1px solid var(--border);" @click="exportMarkdown(); showExportMenu = false"
               @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'" @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'">{{ t.exportMarkdown }}</button>
           </div>
         </div>
         <!-- History -->
-        <button data-testid="history-btn" @click="toggleHistory" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] relative"
-          :style="showHistory ? 'background: var(--accent-light); color: var(--accent);' : historyLoadError ? 'color: var(--color-danger);' : 'color: var(--text-muted);'"
-          :title="historyLoadError ? (t.historyLoadFailed ?? 'Failed to load history') : t.historyBtn">
+        <button
+data-testid="history-btn" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] relative" :style="showHistory ? 'background: var(--accent-light); color: var(--accent);' : historyLoadError ? 'color: var(--color-danger);' : 'color: var(--text-muted);'"
+          :title="historyLoadError ? (t.historyLoadFailed ?? 'Failed to load history') : t.historyBtn"
+          @click="toggleHistory">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3.5l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <!-- Focus mode -->
-        <button data-testid="focus-mode-btn" @click="toggleFocusMode" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
-          :style="isFocusMode ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
-          :title="isFocusMode ? t.exitFocusMode : t.focusMode">
+        <button
+data-testid="focus-mode-btn" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" :style="isFocusMode ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
+          :title="isFocusMode ? t.exitFocusMode : t.focusMode"
+          @click="toggleFocusMode">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 4V2h2.5M10 2h2.5v2M12.5 10V12H10M3.5 12H1.5v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
         </button>
         <!-- Keyboard shortcuts -->
-        <button data-testid="shortcuts-btn" @click="showShortcuts = !showShortcuts" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
-          :style="showShortcuts ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
-          :title="t.shortcutHelp">
+        <button
+data-testid="shortcuts-btn" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" :style="showShortcuts ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
+          :title="t.shortcutHelp"
+          @click="showShortcuts = !showShortcuts">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3.5" width="11" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4 6.5h.5M7 6.5h.5M10 6.5h.5M4 9h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
         </button>
         <!-- Settings -->
-        <button data-testid="settings-btn" @click="emit('open-settings')" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
-          style="color: var(--text-muted);"
-          :title="t.settings">
+        <button
+data-testid="settings-btn" class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);"
+          :title="t.settings"
+          @click="emit('open-settings')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M2.6 11.4l1.1-1.1M10.3 3.7l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
         </button>
       </div>
     </div>
 
     <!-- Floating format menu -->
-    <floating-menu :editor="editor" :tippy-options="{ duration: 100 }" v-if="editor" class="hidden md:block">
+    <FloatingMenu v-if="editor" :editor="editor" :tippy-options="{ duration: 100 }" class="hidden md:block">
       <div class="flex rounded-xl overflow-hidden p-1 gap-1" style="background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-md);">
         <button
           v-for="(item, i) in formatButtons"
           :key="i"
-          @click="item.action()"
           class="px-2 py-1 text-sm rounded-lg transition-colors"
           style="color: var(--text-secondary);"
           :class="[item.bold ? 'font-bold' : item.mono ? 'font-mono' : '']"
+          @click="item.action()"
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
           @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'"
         >
           {{ item.label }}
         </button>
       </div>
-    </floating-menu>
+    </FloatingMenu>
 
     <!-- Main content -->
     <div class="flex-1 flex min-h-0">
@@ -109,10 +119,10 @@
           <div
             v-for="h in tocItems"
             :key="h.pos"
-            @click="jumpTo(h.pos)"
             class="px-2 py-1 rounded-lg cursor-pointer text-sm truncate transition-colors"
             :class="[h.level === 1 ? 'font-bold' : h.level === 2 ? 'pl-4' : 'pl-7 text-xs opacity-80']"
             style="color: var(--text-secondary);"
+            @click="jumpTo(h.pos)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
             @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'"
           >
@@ -137,33 +147,35 @@
         <!-- Find & Replace bar -->
         <div v-if="showFindBar" class="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2" style="background: var(--bg-sidebar); border-bottom: 1px solid var(--border);">
           <div class="flex items-center gap-1.5 flex-1 min-w-[200px]">
-            <input ref="findInputRef" v-model="findQuery" :placeholder="t.findPlaceholder" @keydown.enter.prevent="findNext" @keydown.shift.enter.prevent="findPrev" @keydown.esc.prevent="closeFindBar"
-              class="flex-1 px-2 py-1 ts-sm rounded-md border outline-none" style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; min-width: 100px;" />
+            <input
+ref="findInputRef" v-model="findQuery" :placeholder="t.findPlaceholder" class="flex-1 px-2 py-1 ts-sm rounded-md border outline-none" style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; min-width: 100px;" @keydown.enter.exact.prevent="findNext"
+              @keydown.shift.enter.prevent="findPrev" @keydown.esc.prevent="closeFindBar" />
             <span class="ts-xs shrink-0 tabular-nums" style="color: var(--text-muted);">{{ findMatchCount > 0 ? t.matchCount(findCurrentIndex + 1, findMatchCount) : (findQuery ? t.noMatches : '') }}</span>
-            <button @click="findPrev" class="w-6 h-6 flex items-center justify-center rounded transition-colors" style="color: var(--text-muted);" :title="t.findPrev"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 7.5L6 4.5L9.5 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <button @click="findNext" class="w-6 h-6 flex items-center justify-center rounded transition-colors" style="color: var(--text-muted);" :title="t.findNext"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 7.5L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="w-6 h-6 flex items-center justify-center rounded transition-colors" style="color: var(--text-muted);" :title="t.findPrev" @click="findPrev"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 7.5L6 4.5L9.5 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="w-6 h-6 flex items-center justify-center rounded transition-colors" style="color: var(--text-muted);" :title="t.findNext" @click="findNext"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 7.5L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
           <div v-if="isReplaceMode" class="flex items-center gap-1.5 flex-1 min-w-[200px]">
-            <input v-model="replaceQuery" :placeholder="t.replacePlaceholder" @keydown.enter.prevent="replaceOne" @keydown.esc.prevent="closeFindBar"
-              class="flex-1 px-2 py-1 ts-sm rounded-md border outline-none" style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; min-width: 100px;" />
-            <button @click="replaceOne" class="px-2 py-1 ts-xs rounded-md transition-all" style="background: var(--accent-light); color: var(--accent);">{{ t.replaceOne }}</button>
-            <button @click="replaceAllMatches" class="px-2 py-1 ts-xs rounded-md transition-all" style="background: var(--accent-light); color: var(--accent);">{{ t.replaceAll }}</button>
+            <input
+v-model="replaceQuery" :placeholder="t.replacePlaceholder" class="flex-1 px-2 py-1 ts-sm rounded-md border outline-none" style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; min-width: 100px;"
+              @keydown.enter.prevent="replaceOne" @keydown.esc.prevent="closeFindBar" />
+            <button class="px-2 py-1 ts-xs rounded-md transition-all" style="background: var(--accent-light); color: var(--accent);" @click="replaceOne">{{ t.replaceOne }}</button>
+            <button class="px-2 py-1 ts-xs rounded-md transition-all" style="background: var(--accent-light); color: var(--accent);" @click="replaceAllMatches">{{ t.replaceAll }}</button>
           </div>
           <div class="flex items-center gap-1">
-            <button v-if="!isReplaceMode" @click="isReplaceMode = true" class="ts-xs px-1.5 py-0.5 rounded transition-all" style="color: var(--text-muted);">{{ t.replaceOne }}…</button>
-            <button @click="closeFindBar" class="w-6 h-6 flex items-center justify-center rounded transition-colors" style="color: var(--text-muted);"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button v-if="!isReplaceMode" class="ts-xs px-1.5 py-0.5 rounded transition-all" style="color: var(--text-muted);" @click="isReplaceMode = true">{{ t.replaceOne }}…</button>
+            <button class="w-6 h-6 flex items-center justify-center rounded transition-colors" style="color: var(--text-muted);" @click="closeFindBar"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
           </div>
         </div>
 
         <!-- Real editor — hidden (not destroyed) while diff mode is active -->
-        <editor-content
+        <EditorContent
           v-show="!diffPayload"
-          :editor="editor"
           ref="editorScrollEl"
+          :editor="editor"
           class="flex-1 overflow-y-auto outline-none pb-safe px-4 md:px-8 pt-6"
-          @scroll="onEditorScroll"
           :class="[editorWidth === 'full' ? '' : 'max-w-3xl mx-auto w-full']"
           :style="{ fontSize: fontSize + 'px' }"
+          @scroll="onEditorScroll"
         />
 
         <!-- Feishu-style inline diff view -->
@@ -220,6 +232,9 @@ import { Markdown } from 'tiptap-markdown'
 import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
 import Highlight from '@tiptap/extension-highlight'
+import { TextStyle } from '@tiptap/extension-text-style'
+import { Color } from '@tiptap/extension-color'
+import TextAlign from '@tiptap/extension-text-align'
 import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
 import TaskList from '@tiptap/extension-task-list'
@@ -516,7 +531,10 @@ const editor = useEditor({
     Image.extend({ inline: false, group: 'block', addAttributes() { return { ...this.parent?.(), width: { default: null, parseHTML: el => (el.getAttribute('width') ? parseInt(el.getAttribute('width')!) : null), renderHTML: attrs => (attrs.width ? { width: attrs.width } : {}) } } }, parseHTML() { return [{ tag: 'img[src]' }] }, addStorage() { return { markdown: { serialize(state: MarkdownSerializerState, node: ProsemirrorNode) { const { src, alt, width } = node.attrs as { src: string; alt?: string; width?: number | null }; if (width) state.write(`<img src="${src}"${alt ? ` alt="${alt}"` : ''} width="${width}">`); else state.write(`![${(alt || '').replace(/\[/g, '\\[').replace(/\]/g, '\\]')}](${src})`) } } } }, addNodeView() { return VueNodeViewRenderer(ImageView) } }),
     Markdown.configure({ html: true, transformPastedText: true, transformCopiedText: true }),
     Underline,
-    Highlight.configure({ multicolor: false }),
+    TextStyle,
+    Color,
+    Highlight.configure({ multicolor: true }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Subscript,
     Superscript,
     TaskList,
@@ -530,6 +548,38 @@ const editor = useEditor({
   content: '',
   editorProps: {
     attributes: { class: 'focus:outline-none' },
+    handleDOMEvents: {
+      mousemove: (view, event) => {
+        if (!slashMenuRef.value) return false
+        // Desktop-only: hide on narrow viewports
+        if (window.innerWidth < 768) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        const e = event as MouseEvent
+        const pos = view.posAtCoords({ left: e.clientX, top: e.clientY })
+        if (!pos) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        const $pos = view.state.doc.resolve(pos.pos)
+        if ($pos.depth === 0) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        // Resolve to depth-1 ancestor (top-level block).
+        // For list items the depth-1 ancestor is the list itself (bulletList/orderedList/taskList),
+        // which is the correct drag/convert unit.
+        const blockStart = $pos.before(1)
+        // Skip pos 0 (document root) and position 0 which is the title H1
+        if (blockStart === 0) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        const blockNode = view.state.doc.nodeAt(blockStart)
+        if (!blockNode) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        const domNode = view.nodeDOM(blockStart)
+        if (!(domNode instanceof HTMLElement)) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        const rect = domNode.getBoundingClientRect()
+        // Anchor control to the block's own left edge — independent of sidebar width
+        const left = rect.left - 32
+        if (left < 4) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        const top = rect.top + rect.height / 2
+        // Empty block: no text content (ignores structural nodes like image, hr)
+        const textTypes = new Set(['paragraph','heading','blockquote','callout','toggleBlock'])
+        const isEmpty = textTypes.has(blockNode.type.name) && blockNode.textContent.trim() === ''
+        slashMenuRef.value.showHoverCtrl(top, left, isEmpty, blockStart)
+        return false
+      },
+    },
     transformPastedHTML(html) {
       // Sanitise HTML pasted from external sources to prevent XSS.
       return sanitizePastedHtml(html)
@@ -540,7 +590,7 @@ const editor = useEditor({
       if (files && files.length > 0) { for (let i = 0; i < files.length; i++) { if (files[i].type.startsWith('image/')) { uploadImage(files[i]); hasImage = true } } }
       if (!hasImage) { const items = Array.from(e.clipboardData?.items || []); for (const item of items) { if (item.type.startsWith('image/')) { const file = item.getAsFile(); if (file) { uploadImage(file); hasImage = true } } } }
       if (hasImage) return true
-      const text = e.clipboardData?.getData('text/plain') || ''; const html = e.clipboardData?.getData('text/html') || ''; const isMarkdown = /#\s|\*\*|\[.+?\]\(.+?\)|`{3}|\|\s*---|\- \[[ x]\]|==.+==|\$[^$]+\$/.test(text)
+      const text = e.clipboardData?.getData('text/plain') || ''; const html = e.clipboardData?.getData('text/html') || ''; const isMarkdown = /#\s|\*\*|\[.+?\]\(.+?\)|`{3}|\|\s*---|- \[[ x]\]|==.+==|\$[^$]+\$/.test(text)
       if (text && isMarkdown && (!html || html.includes('data-mime="text/x-markdown"'))) { try { const parser = (editor.value?.storage as any).markdown?.parser; if (!parser) return false; const node = parser.parse(text); if (node) { view.dispatch(view.state.tr.replaceSelectionWith(node)); return true } } catch (err) { console.warn('[YinMo] Markdown paste parse failed:', err) } }
       return false
     },
@@ -585,7 +635,7 @@ const editor = useEditor({
     slashMenuRef.value?.handleSlashOnUpdate(ed)
     applyTypewriterScroll()
   },
-  onSelectionUpdate: () => { applyTypewriterScroll() },
+  onSelectionUpdate: ({ editor: ed }) => { bubbleRef.value?.updateBubble(ed); applyTypewriterScroll() },
 })
 
 // Keep the find-replace composable's editor ref in sync with the real editor.
@@ -682,6 +732,12 @@ const onKey = (e: KeyboardEvent) => {
   // Ctrl+F: open find bar; Ctrl+H: open find+replace bar
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openFindBar(false); return }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'h') { e.preventDefault(); openFindBar(true); return }
+  // Ctrl/⌘+Alt+0: paragraph; Ctrl/⌘+Alt+1-6: heading level N
+  if ((e.metaKey || e.ctrlKey) && e.altKey && !e.shiftKey) {
+    if (e.key === '0') { e.preventDefault(); editor.value?.chain().focus().setParagraph().run(); return }
+    const lvl = parseInt(e.key)
+    if (lvl >= 1 && lvl <= 6) { e.preventDefault(); editor.value?.chain().focus().setHeading({ level: lvl as 1|2|3|4|5|6 }).run(); return }
+  }
   // Escape closes find bar, focus mode, shortcuts
   if (e.key === 'Escape') { if (showFindBar.value) { closeFindBar(); return } if (isFocusMode.value) { isFocusMode.value = false; return } if (showShortcuts.value) { showShortcuts.value = false; return } }
   // Toggle shortcut help panel with ? (no modifier, not in input/textarea)
@@ -821,6 +877,10 @@ const shortcutList = computed(() => [
   { key: 'Ctrl/⌘ + U', desc: 'Underline' },
   { key: 'Ctrl/⌘ + Z', desc: 'Undo' },
   { key: 'Ctrl/⌘ + Shift + Z', desc: 'Redo' },
+  { key: 'Ctrl/⌘ + Alt + 0', desc: t.value.cmdText },
+  { key: 'Ctrl/⌘ + Alt + 1', desc: t.value.cmdH1 },
+  { key: 'Ctrl/⌘ + Alt + 2', desc: t.value.cmdH2 },
+  { key: 'Ctrl/⌘ + Alt + 3', desc: t.value.cmdH3 },
   { key: '/', desc: t.value.insertBlockBtn },
   { key: 'Ctrl/⌘ + A', desc: 'Select block / all' },
   { key: 'Ctrl/⌘ + F', desc: t.value.findPlaceholder },
