@@ -205,6 +205,7 @@ v-model="replaceQuery" :placeholder="t.replacePlaceholder" class="flex-1 px-2 py
   <MobileToolbar :editor="editor" :t="t" />
 
     <BubbleToolbar ref="bubbleRef" :editor="editor" :t="t" />
+    <TableOverlay :editor="editor" :t="t" />
     <ShortcutsModal :visible="showShortcuts" :shortcuts="shortcutList" :t="t" @close="showShortcuts = false" />
     <SlashMenu ref="slashMenuRef" :editor="editor" :t="t" />
   </div>
@@ -257,6 +258,7 @@ import MobileToolbar from './MobileToolbar.vue'
 import ShortcutsModal from './ShortcutsModal.vue'
 import SlashMenu from './SlashMenu.vue'
 import BubbleToolbar from './BubbleToolbar.vue'
+import TableOverlay from './TableOverlay.vue'
 import { InlineMath } from './InlineMath'
 import { Callout } from './Callout'
 import { ToggleBlock } from './ToggleBlock'
