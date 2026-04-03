@@ -160,7 +160,7 @@
         @mouseenter="e => { if (opt.id !== currentTypeId) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
         @mouseleave="e => { if (opt.id !== currentTypeId) (e.currentTarget as HTMLElement).style.background='transparent' }"
       >
-        <span class="w-6 text-center font-mono text-xs font-bold shrink-0" style="color: var(--text-muted);">{{ opt.icon }}</span>
+        <span class="w-6 flex items-center justify-center shrink-0" style="color: var(--text-muted);"><component :is="opt.svgIcon" :size="14" /></span>
         <span>{{ opt.label }}</span>
       </div>
     </div>
@@ -218,7 +218,7 @@
 import { ref, computed, nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
-import { Link, ChevronDown, Ban, Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript } from 'lucide-vue-next'
+import { Link, ChevronDown, Ban, Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript, Pilcrow, Heading1, Heading2, Heading3, Heading4 } from 'lucide-vue-next'
 
 const SAFE_LINK_PROTO = /^(https?|mailto|tel):/i
 
@@ -306,11 +306,11 @@ const currentTypeId  = ref('text')
 const isSpecialBlock = ref(false)
 
 const typeOptions = computed(() => [
-  { id: 'text', icon: 'T',  label: props.t.cmdText ?? '正文',    action: () => props.editor?.chain().focus().setParagraph().run() },
-  { id: 'h1',   icon: 'H1', label: props.t.cmdH1   ?? '一级标题', action: () => props.editor?.chain().focus().setHeading({ level: 1 }).run() },
-  { id: 'h2',   icon: 'H2', label: props.t.cmdH2   ?? '二级标题', action: () => props.editor?.chain().focus().setHeading({ level: 2 }).run() },
-  { id: 'h3',   icon: 'H3', label: props.t.cmdH3   ?? '三级标题', action: () => props.editor?.chain().focus().setHeading({ level: 3 }).run() },
-  { id: 'h4',   icon: 'H4', label: props.t.cmdH4   ?? '四级标题', action: () => props.editor?.chain().focus().setHeading({ level: 4 }).run() },
+  { id: 'text', icon: 'T',  svgIcon: Pilcrow,   label: props.t.cmdText ?? '正文',    action: () => props.editor?.chain().focus().setParagraph().run() },
+  { id: 'h1',   icon: 'H1', svgIcon: Heading1,  label: props.t.cmdH1   ?? '一级标题', action: () => props.editor?.chain().focus().setHeading({ level: 1 }).run() },
+  { id: 'h2',   icon: 'H2', svgIcon: Heading2,  label: props.t.cmdH2   ?? '二级标题', action: () => props.editor?.chain().focus().setHeading({ level: 2 }).run() },
+  { id: 'h3',   icon: 'H3', svgIcon: Heading3,  label: props.t.cmdH3   ?? '三级标题', action: () => props.editor?.chain().focus().setHeading({ level: 3 }).run() },
+  { id: 'h4',   icon: 'H4', svgIcon: Heading4,  label: props.t.cmdH4   ?? '四级标题', action: () => props.editor?.chain().focus().setHeading({ level: 4 }).run() },
 ])
 
 const currentTypeLabel = computed(() =>
