@@ -259,6 +259,9 @@ import {
   GripVertical, Scissors, Copy, FileText, Trash2,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Palette, ChevronRight, Ban, ListTodo, Table2,
+  Pilcrow, Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
+  List, ListOrdered, Code2, Quote, Lightbulb, ChevronsUpDown,
+  Minus, Sigma, GitBranch, Info, AlertTriangle, CheckCircle2, AlertOctagon,
 } from 'lucide-vue-next'
 
 // SlashCommand: icon is a text/emoji fallback; svgIcon (optional) renders a Lucide SVG instead.
@@ -499,18 +502,18 @@ const calloutTypes = [
 // ── Convert commands: 12 types in a 2×6 grid ─────────────────────────────
 // H5/H6 are omitted here; they remain available via the slash menu.
 const convertCommands = computed<{ id: string; title: string; icon: string; svgIcon?: Component; action: (ed: TiptapEditor) => void }[]>(() => [
-  { id: 'text',    title: props.t.cmdText,        icon: 'T',   action: (ed) => ed.chain().focus().setParagraph().run() },
-  { id: 'h1',      title: props.t.cmdH1,          icon: 'H1',  action: (ed) => ed.chain().focus().setHeading({ level: 1 }).run() },
-  { id: 'h2',      title: props.t.cmdH2,          icon: 'H2',  action: (ed) => ed.chain().focus().setHeading({ level: 2 }).run() },
-  { id: 'h3',      title: props.t.cmdH3,          icon: 'H3',  action: (ed) => ed.chain().focus().setHeading({ level: 3 }).run() },
-  { id: 'h4',      title: props.t.cmdH4,          icon: 'H4',  action: (ed) => ed.chain().focus().setHeading({ level: 4 }).run() },
-  { id: 'ul',      title: props.t.cmdUL,          icon: '•',   action: (ed) => ed.chain().focus().toggleBulletList().run() },
-  { id: 'ol',      title: props.t.cmdOL,          icon: '1.',  action: (ed) => ed.chain().focus().toggleOrderedList().run() },
-  { id: 'todo',    title: props.t.cmdTodo,        icon: '☑',  svgIcon: ListTodo, action: (ed) => ed.chain().focus().toggleTaskList().run() },
-  { id: 'code',    title: props.t.cmdCode,        icon: '</>', action: (ed) => ed.chain().focus().toggleCodeBlock().run() },
-  { id: 'quote',   title: props.t.cmdQuote,       icon: '❝',  action: (ed) => ed.chain().focus().toggleBlockquote().run() },
-  { id: 'callout', title: props.t.cmdCalloutInfo, icon: '💡', action: (_ed) => openSubmenu('callout') },
-  { id: 'toggle',  title: props.t.cmdToggle,      icon: '▶',  action: (ed) => { ed.chain().focus().deleteSelection().insertContent({ type: 'toggleBlock', attrs: { open: true, title: 'Toggle' }, content: [{ type: 'paragraph' }] }).run() } },
+  { id: 'text',    title: props.t.cmdText,        icon: 'T',   svgIcon: Pilcrow,        action: (ed) => ed.chain().focus().setParagraph().run() },
+  { id: 'h1',      title: props.t.cmdH1,          icon: 'H1',  svgIcon: Heading1,       action: (ed) => ed.chain().focus().setHeading({ level: 1 }).run() },
+  { id: 'h2',      title: props.t.cmdH2,          icon: 'H2',  svgIcon: Heading2,       action: (ed) => ed.chain().focus().setHeading({ level: 2 }).run() },
+  { id: 'h3',      title: props.t.cmdH3,          icon: 'H3',  svgIcon: Heading3,       action: (ed) => ed.chain().focus().setHeading({ level: 3 }).run() },
+  { id: 'h4',      title: props.t.cmdH4,          icon: 'H4',  svgIcon: Heading4,       action: (ed) => ed.chain().focus().setHeading({ level: 4 }).run() },
+  { id: 'ul',      title: props.t.cmdUL,          icon: '•',   svgIcon: List,           action: (ed) => ed.chain().focus().toggleBulletList().run() },
+  { id: 'ol',      title: props.t.cmdOL,          icon: '1.',  svgIcon: ListOrdered,    action: (ed) => ed.chain().focus().toggleOrderedList().run() },
+  { id: 'todo',    title: props.t.cmdTodo,        icon: '☑',  svgIcon: ListTodo,       action: (ed) => ed.chain().focus().toggleTaskList().run() },
+  { id: 'code',    title: props.t.cmdCode,        icon: '</>',  svgIcon: Code2,          action: (ed) => ed.chain().focus().toggleCodeBlock().run() },
+  { id: 'quote',   title: props.t.cmdQuote,       icon: '❝',  svgIcon: Quote,          action: (ed) => ed.chain().focus().toggleBlockquote().run() },
+  { id: 'callout', title: props.t.cmdCalloutInfo, icon: '💡', svgIcon: Lightbulb,      action: (_ed) => openSubmenu('callout') },
+  { id: 'toggle',  title: props.t.cmdToggle,      icon: '▶',  svgIcon: ChevronsUpDown, action: (ed) => { ed.chain().focus().deleteSelection().insertContent({ type: 'toggleBlock', attrs: { open: true, title: 'Toggle' }, content: [{ type: 'paragraph' }] }).run() } },
 ])
 
 const executeCalloutConvert = (type: string) => {
@@ -735,27 +738,27 @@ const getSlashRange = (ed: TiptapEditor) => {
 }
 
 const slashCommands = computed<SlashCommand[]>(() => [
-  { id: 'text',    title: props.t.cmdText,    desc: props.t.cmdTextDesc,    icon: 'T',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).setParagraph().run() },
-  { id: 'h1',      title: props.t.cmdH1,      desc: props.t.cmdH1Desc,      icon: 'H1',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 1 }).run() },
-  { id: 'h2',      title: props.t.cmdH2,      desc: props.t.cmdH2Desc,      icon: 'H2',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 2 }).run() },
-  { id: 'h3',      title: props.t.cmdH3,      desc: props.t.cmdH3Desc,      icon: 'H3',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 3 }).run() },
-  { id: 'h4',      title: props.t.cmdH4,      desc: props.t.cmdH4Desc,      icon: 'H4',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 4 }).run() },
-  { id: 'h5',      title: props.t.cmdH5,      desc: props.t.cmdH5Desc,      icon: 'H5',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 5 }).run() },
-  { id: 'h6',      title: props.t.cmdH6,      desc: props.t.cmdH6Desc,      icon: 'H6',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 6 }).run() },
-  { id: 'ul',      title: props.t.cmdUL,      desc: props.t.cmdULDesc,      icon: '•',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleBulletList().run() },
-  { id: 'ol',      title: props.t.cmdOL,      desc: props.t.cmdOLDesc,      icon: '1.',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleOrderedList().run() },
-  { id: 'todo',    title: props.t.cmdTodo,    desc: props.t.cmdTodoDesc,    icon: '☑',  svgIcon: ListTodo, action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleTaskList().run() },
-  { id: 'quote',   title: props.t.cmdQuote,   desc: props.t.cmdQuoteDesc,   icon: '❝',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleBlockquote().run() },
-  { id: 'table',   title: props.t.cmdTable,   desc: props.t.cmdTableDesc,   icon: '⊞',  svgIcon: Table2, action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
-  { id: 'code',    title: props.t.cmdCode,    desc: props.t.cmdCodeDesc,    icon: '<>',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock().run() },
-  { id: 'math',    title: props.t.cmdMath,    desc: props.t.cmdMathDesc,    icon: '∑',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock({ language: 'math' }).run() },
-  { id: 'diagram', title: props.t.cmdDiagram, desc: props.t.cmdDiagramDesc, icon: '⬡',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock({ language: 'mermaid' }).run() },
-  { id: 'hr',      title: props.t.cmdHR,      desc: props.t.cmdHRDesc,      icon: '—',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).setHorizontalRule().run() },
-  { id: 'callout-info',    title: props.t.cmdCalloutInfo,    desc: props.t.cmdCalloutInfoDesc,    icon: '💡',  action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'info',    emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
-  { id: 'callout-warning', title: props.t.cmdCalloutWarning, desc: props.t.cmdCalloutWarningDesc, icon: '⚠️',  action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'warning', emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
-  { id: 'callout-tip',     title: props.t.cmdCalloutTip,     desc: props.t.cmdCalloutTipDesc,     icon: '✅',  action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'tip',     emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
-  { id: 'callout-danger',  title: props.t.cmdCalloutDanger,  desc: props.t.cmdCalloutDangerDesc,  icon: '🚨',  action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'danger',  emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
-  { id: 'toggle',          title: props.t.cmdToggle,         desc: props.t.cmdToggleDesc,         icon: '▶',   action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'toggleBlock', attrs: { open: true, title: 'Toggle' }, content: [{ type: 'paragraph' }] }).run() } },
+  { id: 'text',    title: props.t.cmdText,    desc: props.t.cmdTextDesc,    icon: 'T',   svgIcon: Pilcrow,       action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).setParagraph().run() },
+  { id: 'h1',      title: props.t.cmdH1,      desc: props.t.cmdH1Desc,      icon: 'H1',  svgIcon: Heading1,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 1 }).run() },
+  { id: 'h2',      title: props.t.cmdH2,      desc: props.t.cmdH2Desc,      icon: 'H2',  svgIcon: Heading2,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 2 }).run() },
+  { id: 'h3',      title: props.t.cmdH3,      desc: props.t.cmdH3Desc,      icon: 'H3',  svgIcon: Heading3,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 3 }).run() },
+  { id: 'h4',      title: props.t.cmdH4,      desc: props.t.cmdH4Desc,      icon: 'H4',  svgIcon: Heading4,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 4 }).run() },
+  { id: 'h5',      title: props.t.cmdH5,      desc: props.t.cmdH5Desc,      icon: 'H5',  svgIcon: Heading5,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 5 }).run() },
+  { id: 'h6',      title: props.t.cmdH6,      desc: props.t.cmdH6Desc,      icon: 'H6',  svgIcon: Heading6,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 6 }).run() },
+  { id: 'ul',      title: props.t.cmdUL,      desc: props.t.cmdULDesc,      icon: '•',   svgIcon: List,          action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleBulletList().run() },
+  { id: 'ol',      title: props.t.cmdOL,      desc: props.t.cmdOLDesc,      icon: '1.',  svgIcon: ListOrdered,   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleOrderedList().run() },
+  { id: 'todo',    title: props.t.cmdTodo,    desc: props.t.cmdTodoDesc,    icon: '☑',  svgIcon: ListTodo,      action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleTaskList().run() },
+  { id: 'quote',   title: props.t.cmdQuote,   desc: props.t.cmdQuoteDesc,   icon: '❝',   svgIcon: Quote,         action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleBlockquote().run() },
+  { id: 'table',   title: props.t.cmdTable,   desc: props.t.cmdTableDesc,   icon: '⊞',  svgIcon: Table2,        action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+  { id: 'code',    title: props.t.cmdCode,    desc: props.t.cmdCodeDesc,    icon: '<>',  svgIcon: Code2,         action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock().run() },
+  { id: 'math',    title: props.t.cmdMath,    desc: props.t.cmdMathDesc,    icon: '∑',   svgIcon: Sigma,         action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock({ language: 'math' }).run() },
+  { id: 'diagram', title: props.t.cmdDiagram, desc: props.t.cmdDiagramDesc, icon: '⬡',   svgIcon: GitBranch,     action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock({ language: 'mermaid' }).run() },
+  { id: 'hr',      title: props.t.cmdHR,      desc: props.t.cmdHRDesc,      icon: '—',   svgIcon: Minus,         action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).setHorizontalRule().run() },
+  { id: 'callout-info',    title: props.t.cmdCalloutInfo,    desc: props.t.cmdCalloutInfoDesc,    icon: '💡',  svgIcon: Info,           action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'info',    emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
+  { id: 'callout-warning', title: props.t.cmdCalloutWarning, desc: props.t.cmdCalloutWarningDesc, icon: '⚠️',  svgIcon: AlertTriangle,  action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'warning', emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
+  { id: 'callout-tip',     title: props.t.cmdCalloutTip,     desc: props.t.cmdCalloutTipDesc,     icon: '✅',  svgIcon: CheckCircle2,   action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'tip',     emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
+  { id: 'callout-danger',  title: props.t.cmdCalloutDanger,  desc: props.t.cmdCalloutDangerDesc,  icon: '🚨',  svgIcon: AlertOctagon,   action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'callout', attrs: { type: 'danger',  emoji: '' }, content: [{ type: 'paragraph' }] }).run() } },
+  { id: 'toggle',          title: props.t.cmdToggle,         desc: props.t.cmdToggleDesc,         icon: '▶',   svgIcon: ChevronsUpDown, action: (ed) => { const r = getSlashRange(ed); ed.chain().focus().deleteRange(r).insertContent({ type: 'toggleBlock', attrs: { open: true, title: 'Toggle' }, content: [{ type: 'paragraph' }] }).run() } },
 ])
 
 const filteredSlashCommands = computed(() => {
