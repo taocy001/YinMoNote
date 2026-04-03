@@ -294,7 +294,12 @@ let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
 let _isDragging = false
 
 const scheduleHideHoverCtrl = () => {
-  hoverHideTimer = setTimeout(() => { hoverCtrlVisible.value = false }, 300)
+  hoverHideTimer = setTimeout(() => {
+    // Keep the handle visible while any menu spawned from it is still open.
+    if (!blockMenuVisible.value && !slashMenuVisible.value) {
+      hoverCtrlVisible.value = false
+    }
+  }, 300)
 }
 const keepHoverCtrl = () => {
   if (hoverHideTimer) clearTimeout(hoverHideTimer)
