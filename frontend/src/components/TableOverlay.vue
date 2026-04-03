@@ -12,9 +12,9 @@
         class="fixed z-[77] cursor-pointer flex items-center justify-center rounded transition-all select-none"
         :style="{
           top:          (row.rect.top + 2) + 'px',
-          left:         Math.max(4, tableRect.left - 26) + 'px',
-          width:        '20px',
-          height:       Math.max(20, row.rect.height - 4) + 'px',
+          left:         Math.max(4, tableRect.left - 34) + 'px',
+          width:        '28px',
+          height:       Math.max(36, row.rect.height - 4) + 'px',
           background:   'var(--accent)',
           color:        '#fff',
           borderRadius: '4px',
@@ -38,9 +38,9 @@
         class="fixed z-[77] cursor-pointer flex items-center justify-center rounded transition-all select-none"
         :style="{
           left:          (col.rect.left + 2) + 'px',
-          top:           Math.max(4, tableRect.top - 22) + 'px',
-          height:        '16px',
-          width:         Math.max(20, col.rect.width - 4) + 'px',
+          top:           Math.max(4, tableRect.top - 30) + 'px',
+          height:        '24px',
+          width:         Math.max(36, col.rect.width - 4) + 'px',
           background:    'var(--accent)',
           color:         '#fff',
           borderRadius:  '4px',
@@ -61,15 +61,15 @@
       data-table-overlay
       class="fixed z-[78] select-none"
       :style="{
-        top:  Math.max(4, tableRect.top - 22) + 'px',
-        left: Math.max(4, tableRect.left - 26) + 'px',
+        top:  Math.max(4, tableRect.top - 30) + 'px',
+        left: Math.max(4, tableRect.left - 34) + 'px',
         transform: 'none',
       }"
       @mouseenter="keepVisible"
       @mouseleave="keepVisible"
     >
       <button
-        class="w-6 h-6 flex items-center justify-center rounded transition-colors"
+        class="menu-item w-6 h-6 flex items-center justify-center rounded transition-colors"
         :style="tableMenuVisible
           ? 'background: var(--accent); color: #fff; border: 1px solid var(--accent);'
           : 'background: var(--bg-editor); color: var(--text-muted); border: 1px solid var(--border);'"
@@ -93,7 +93,7 @@
         <div v-if="item.separator" class="my-1 mx-2" style="height:1px; background: var(--border);"></div>
         <div
           v-else
-          class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors"
+          class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors"
           :style="item.danger ? 'color: var(--color-danger);' : 'color: var(--text-secondary);'"
           @click="item.action?.()"
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -121,7 +121,7 @@
           <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.alignLabel }}</span>
           <button
             v-for="a in alignOptions" :key="a.value"
-            class="flex-1 h-6 flex items-center justify-center rounded transition-colors"
+            class="menu-item flex-1 h-6 flex items-center justify-center rounded transition-colors"
             style="color: var(--text-muted);"
             @click="applyAlignToRow(a.value)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -133,7 +133,7 @@
           <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableFormatLabel }}</span>
           <button
             v-for="f in formatOptions" :key="f.mark"
-            class="flex-1 h-6 flex items-center justify-center rounded transition-colors"
+            class="menu-item flex-1 h-6 flex items-center justify-center rounded transition-colors"
             style="color: var(--text-muted);"
             @click="applyMarkToRow(f.mark)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -145,7 +145,7 @@
           <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableBgColor }}</span>
           <button
             v-for="c in bgColorOptions" :key="c.value ?? 'clear'"
-            class="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-opacity"
+            class="menu-item w-5 h-5 rounded flex items-center justify-center shrink-0 transition-opacity"
             :style="c.value ? `background:${c.value}; border:1px solid var(--border);` : 'border:1px solid var(--border); color:var(--text-muted);'"
             :title="c.value ? c.value : t.tableBgColorClear"
             @click="applyBgToRow(c.value)"
@@ -157,7 +157,7 @@
         </div>
         <div
           v-else
-          class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors"
+          class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors"
           :style="item.danger ? 'color: var(--color-danger);' : 'color: var(--text-secondary);'"
           @click="item.action?.()"
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -179,76 +179,76 @@
     >
       <!-- Row section -->
       <div class="px-3 pt-2 pb-0.5 text-xs font-semibold" style="color: var(--text-muted);">{{ t.tableRowOps }}</div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runRowCmd('addRowBefore')" @touchend.prevent="runRowCmd('addRowBefore')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runRowCmd('addRowBefore')" @touchend.prevent="runRowCmd('addRowBefore')">
         <ArrowUpToLine :size="13" class="shrink-0" /><span>{{ t.tableInsertRowAbove }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runRowCmd('addRowAfter')" @touchend.prevent="runRowCmd('addRowAfter')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runRowCmd('addRowAfter')" @touchend.prevent="runRowCmd('addRowAfter')">
         <ArrowDownToLine :size="13" class="shrink-0" /><span>{{ t.tableInsertRowBelow }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runRowCmd('toggleHeaderRow')" @touchend.prevent="runRowCmd('toggleHeaderRow')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runRowCmd('toggleHeaderRow')" @touchend.prevent="runRowCmd('toggleHeaderRow')">
         <Rows2 :size="13" class="shrink-0" /><span>{{ t.tableToggleHeaderRow }}</span>
       </div>
       <!-- Row align -->
       <div class="flex items-center gap-1 px-3 py-1.5">
         <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.alignLabel }}</span>
-        <button v-for="a in alignOptions" :key="a.value" class="flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyAlignToRow(a.value)" @touchend.prevent="applyAlignToRow(a.value)"><component :is="a.icon" :size="14" /></button>
+        <button v-for="a in alignOptions" :key="a.value" class="menu-item flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyAlignToRow(a.value)" @touchend.prevent="applyAlignToRow(a.value)"><component :is="a.icon" :size="14" /></button>
       </div>
       <!-- Row bg -->
       <div class="flex items-center gap-1 px-3 py-1.5">
         <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableBgColor }}</span>
-        <button v-for="c in bgColorOptions" :key="c.value ?? 'clear'" class="w-6 h-6 rounded flex items-center justify-center shrink-0" :style="c.value ? `background:${c.value}; border:1px solid var(--border);` : 'border:1px solid var(--border); color:var(--text-muted);'" @click="applyBgToRow(c.value)" @touchend.prevent="applyBgToRow(c.value)"><X v-if="!c.value" :size="10" /></button>
+        <button v-for="c in bgColorOptions" :key="c.value ?? 'clear'" class="menu-item w-6 h-6 rounded flex items-center justify-center shrink-0" :style="c.value ? `background:${c.value}; border:1px solid var(--border);` : 'border:1px solid var(--border); color:var(--text-muted);'" @click="applyBgToRow(c.value)" @touchend.prevent="applyBgToRow(c.value)"><X v-if="!c.value" :size="10" /></button>
       </div>
       <!-- Row format -->
       <div class="flex items-center gap-1 px-3 py-1.5">
         <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableFormatLabel }}</span>
-        <button v-for="f in formatOptions" :key="f.mark" class="flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyMarkToRow(f.mark)" @touchend.prevent="applyMarkToRow(f.mark)"><component :is="f.icon" :size="14" /></button>
+        <button v-for="f in formatOptions" :key="f.mark" class="menu-item flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyMarkToRow(f.mark)" @touchend.prevent="applyMarkToRow(f.mark)"><component :is="f.icon" :size="14" /></button>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--color-danger);" @click="runRowCmd('deleteRow')" @touchend.prevent="runRowCmd('deleteRow')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--color-danger);" @click="runRowCmd('deleteRow')" @touchend.prevent="runRowCmd('deleteRow')">
         <Trash2 :size="13" class="shrink-0" /><span>{{ t.tableDeleteRow }}</span>
       </div>
       <!-- Col section -->
       <div class="mx-2 my-1" style="height:1px; background: var(--border);"></div>
       <div class="px-3 pt-1 pb-0.5 text-xs font-semibold" style="color: var(--text-muted);">{{ t.tableColOps }}</div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runColCmd('addColumnBefore')" @touchend.prevent="runColCmd('addColumnBefore')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runColCmd('addColumnBefore')" @touchend.prevent="runColCmd('addColumnBefore')">
         <ArrowLeftToLine :size="13" class="shrink-0" /><span>{{ t.tableInsertColLeft }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runColCmd('addColumnAfter')" @touchend.prevent="runColCmd('addColumnAfter')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runColCmd('addColumnAfter')" @touchend.prevent="runColCmd('addColumnAfter')">
         <ArrowRightToLine :size="13" class="shrink-0" /><span>{{ t.tableInsertColRight }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runColCmd('toggleHeaderColumn')" @touchend.prevent="runColCmd('toggleHeaderColumn')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="runColCmd('toggleHeaderColumn')" @touchend.prevent="runColCmd('toggleHeaderColumn')">
         <Columns2 :size="13" class="shrink-0" /><span>{{ t.tableToggleHeaderCol }}</span>
       </div>
       <!-- Col align -->
       <div class="flex items-center gap-1 px-3 py-1.5">
         <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.alignLabel }}</span>
-        <button v-for="a in alignOptions" :key="a.value" class="flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyAlignToCol(a.value)" @touchend.prevent="applyAlignToCol(a.value)"><component :is="a.icon" :size="14" /></button>
+        <button v-for="a in alignOptions" :key="a.value" class="menu-item flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyAlignToCol(a.value)" @touchend.prevent="applyAlignToCol(a.value)"><component :is="a.icon" :size="14" /></button>
       </div>
       <!-- Col bg -->
       <div class="flex items-center gap-1 px-3 py-1.5">
         <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableBgColor }}</span>
-        <button v-for="c in bgColorOptions" :key="c.value ?? 'clear'" class="w-6 h-6 rounded flex items-center justify-center shrink-0" :style="c.value ? `background:${c.value}; border:1px solid var(--border);` : 'border:1px solid var(--border); color:var(--text-muted);'" @click="applyBgToCol(c.value)" @touchend.prevent="applyBgToCol(c.value)"><X v-if="!c.value" :size="10" /></button>
+        <button v-for="c in bgColorOptions" :key="c.value ?? 'clear'" class="menu-item w-6 h-6 rounded flex items-center justify-center shrink-0" :style="c.value ? `background:${c.value}; border:1px solid var(--border);` : 'border:1px solid var(--border); color:var(--text-muted);'" @click="applyBgToCol(c.value)" @touchend.prevent="applyBgToCol(c.value)"><X v-if="!c.value" :size="10" /></button>
       </div>
       <!-- Col format -->
       <div class="flex items-center gap-1 px-3 py-1.5">
         <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableFormatLabel }}</span>
-        <button v-for="f in formatOptions" :key="f.mark" class="flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyMarkToCol(f.mark)" @touchend.prevent="applyMarkToCol(f.mark)"><component :is="f.icon" :size="14" /></button>
+        <button v-for="f in formatOptions" :key="f.mark" class="menu-item flex-1 h-7 flex items-center justify-center rounded" style="color: var(--text-muted);" @click="applyMarkToCol(f.mark)" @touchend.prevent="applyMarkToCol(f.mark)"><component :is="f.icon" :size="14" /></button>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--color-danger);" @click="runColCmd('deleteColumn')" @touchend.prevent="runColCmd('deleteColumn')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--color-danger);" @click="runColCmd('deleteColumn')" @touchend.prevent="runColCmd('deleteColumn')">
         <Trash2 :size="13" class="shrink-0" /><span>{{ t.tableDeleteCol }}</span>
       </div>
       <!-- Table section -->
       <div class="mx-2 my-1" style="height:1px; background: var(--border);"></div>
       <div class="px-3 pt-1 pb-0.5 text-xs font-semibold" style="color: var(--text-muted);">{{ t.tableTableOps }}</div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="copyTable" @touchend.prevent="copyTable">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="copyTable" @touchend.prevent="copyTable">
         <Copy :size="13" class="shrink-0" /><span>{{ t.tableCopyTable }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="cutTable" @touchend.prevent="cutTable">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="cutTable" @touchend.prevent="cutTable">
         <Scissors :size="13" class="shrink-0" /><span>{{ t.tableCutTable }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="distributeColsEvenly" @touchend.prevent="distributeColsEvenly">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--text-secondary);" @click="distributeColsEvenly" @touchend.prevent="distributeColsEvenly">
         <LayoutList :size="13" class="shrink-0" /><span>{{ t.tableDistributeCols }}</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--color-danger);" @click="runCmd('deleteTable')" @touchend.prevent="runCmd('deleteTable')">
+      <div class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer" style="color: var(--color-danger);" @click="runCmd('deleteTable')" @touchend.prevent="runCmd('deleteTable')">
         <Trash2 :size="13" class="shrink-0" /><span>{{ t.tableDeleteTable }}</span>
       </div>
       <div class="pb-1"></div>
@@ -269,7 +269,7 @@
           <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.alignLabel }}</span>
           <button
             v-for="a in alignOptions" :key="a.value"
-            class="flex-1 h-6 flex items-center justify-center rounded transition-colors"
+            class="menu-item flex-1 h-6 flex items-center justify-center rounded transition-colors"
             style="color: var(--text-muted);"
             @click="applyAlignToCol(a.value)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -280,7 +280,7 @@
           <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableFormatLabel }}</span>
           <button
             v-for="f in formatOptions" :key="f.mark"
-            class="flex-1 h-6 flex items-center justify-center rounded transition-colors"
+            class="menu-item flex-1 h-6 flex items-center justify-center rounded transition-colors"
             style="color: var(--text-muted);"
             @click="applyMarkToCol(f.mark)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -291,7 +291,7 @@
           <span class="text-xs shrink-0 mr-1" style="color: var(--text-muted);">{{ t.tableBgColor }}</span>
           <button
             v-for="c in bgColorOptions" :key="c.value ?? 'clear'"
-            class="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-opacity"
+            class="menu-item w-5 h-5 rounded flex items-center justify-center shrink-0 transition-opacity"
             :style="c.value ? `background:${c.value}; border:1px solid var(--border);` : 'border:1px solid var(--border); color:var(--text-muted);'"
             :title="c.value ? c.value : t.tableBgColorClear"
             @click="applyBgToCol(c.value)"
@@ -303,7 +303,7 @@
         </div>
         <div
           v-else
-          class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors"
+          class="menu-item flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors"
           :style="item.danger ? 'color: var(--color-danger);' : 'color: var(--text-secondary);'"
           @click="item.action?.()"
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
@@ -477,6 +477,13 @@ const refreshInfo = () => {
 const focusCell = (cellEl: HTMLElement): boolean => {
   if (!props.editor) return false
   try {
+    // posAtDOM(el, 0) returns the position just inside el's opening token
+    // (i.e. the start of the cell's content).  +1 moves into the first child
+    // node (usually a paragraph) so Tiptap's setTextSelection places the
+    // cursor at the beginning of the cell text rather than on the cell node
+    // itself, which is not a valid cursor position for all commands.
+    // Wrapped in try-catch because posAtDOM throws when cellEl has been
+    // detached from the editor DOM (e.g. table deleted while menu is open).
     const pos = props.editor.view.posAtDOM(cellEl, 0) + 1
     props.editor.chain().focus().setTextSelection(pos).run()
     return true
@@ -654,8 +661,12 @@ const distributeColsEvenly = () => {
   // (user's focus may have shifted when the floating menu button was clicked).
   // posAtDOM returns posAtStart (inside the table open token); subtract 1 to get
   // the position of the table node itself so nodeAt() returns the table node.
-  const tableContentStart = props.editor.view.posAtDOM(tableEl.value, 0)
-  const tablePos = tableContentStart - 1
+  // Wrap in try-catch: posAtDOM throws if the element has been detached from
+  // the editor DOM (e.g. table deleted between menu open and click).
+  let tablePos: number
+  try {
+    tablePos = props.editor.view.posAtDOM(tableEl.value, 0) - 1
+  } catch (_) { return }
   const tableNode = state.doc.nodeAt(tablePos)
   if (!tableNode || tableNode.type.name !== 'table') return
 
@@ -690,30 +701,27 @@ const getTableHtml = (): string | null => {
 }
 
 const copyTableToClipboard = async (html: string): Promise<boolean> => {
-  // Tier 1: modern Clipboard API (Chrome, HTTPS)
-  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
-    try {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/html':  new Blob([html], { type: 'text/html'  }),
-          'text/plain': new Blob([html], { type: 'text/plain' }),
-        }),
-      ])
-      return true
-    } catch (_) { /* fall through */ }
-  }
-  // Tier 2: execCommand (Firefox, HTTP environments)
+  // Use the modern async Clipboard API only.
+  // The legacy execCommand('copy') fallback is intentionally omitted: it writes
+  // raw HTML as plain text into the system clipboard, which is readable by any
+  // local process and could expose decrypted note content.  If ClipboardItem is
+  // unavailable (non-HTTPS, old Firefox) the copy silently fails rather than
+  // leaking content through an insecure channel.
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false
   try {
-    const ta = document.createElement('textarea')
-    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0'
-    ta.value = html
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
-    if (ok) return true
-  } catch (_) { /* fall through */ }
-  return false
+    // text/plain carries a stripped version of the HTML so paste targets that
+    // only accept plain text get readable content instead of raw markup.
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const plainText = doc.body.innerText ?? doc.body.textContent ?? ''
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html':  new Blob([html],      { type: 'text/html'  }),
+        'text/plain': new Blob([plainText], { type: 'text/plain' }),
+      }),
+    ])
+    return true
+  } catch (_) { return false }
 }
 
 const copyTable = async () => {
@@ -796,6 +804,11 @@ const keepVisible = () => { if (hideTimer) clearTimeout(hideTimer) }
 
 const scheduleHide = () => {
   if (hideTimer) clearTimeout(hideTimer)
+  // 300 ms: long enough for the mouse to travel from a table cell to the overlay
+  // bar or menu without the overlay disappearing, but short enough to feel
+  // responsive when the user genuinely leaves the table.
+  // The re-check inside the callback guards against a race where the user opens
+  // a menu between the time scheduleHide() is called and the timer fires.
   hideTimer = setTimeout(() => {
     if (tableMenuVisible.value || rowMenuVisible.value || colMenuVisible.value || mobileMenuVisible.value) return
     tableEl.value      = null
@@ -873,7 +886,10 @@ const onTouchStart = (e: TouchEvent) => {
   const cellEl = target?.closest<HTMLTableCellElement>('td, th')
   if (!cellEl) return
 
-  // Start long-press timer (500ms). Cancelled if finger moves > 10px.
+  // 500 ms matches the Android long-press convention and feels natural on iOS.
+  // The timer is cancelled in onTouchMove if the finger drifts more than 10 px
+  // (the 10 px threshold absorbs natural touch jitter without requiring DPI
+  // normalisation; typical jitter is 2–4 px on modern phones).
   longPressTimer = setTimeout(() => {
     longPressTimer = null
     // Set row / col targets for menu commands
@@ -909,6 +925,9 @@ const onTouchMove = (e: TouchEvent) => {
 
 const onTouchEnd = () => {
   if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+  // After a long-press the mobile menu is open; cancel any pending hide timer so
+  // the overlay does not vanish 300 ms after the finger lifts.
+  if (mobileMenuVisible.value && hideTimer) { clearTimeout(hideTimer); hideTimer = null }
 }
 
 const onScroll = () => { if (tableEl.value) refreshInfo() }

@@ -141,3 +141,20 @@ select:focus-visible,
 }
 
 /* ProseMirror placeholder moved to assets/editor-prose.css (uses data-placeholder attr) */
+
+/* ── Touch-friendly menu items ──
+   Adds an :active press state for touch devices where hover doesn't fire.
+   Removes the default iOS blue tap-highlight rectangle. */
+.menu-item {
+  -webkit-tap-highlight-color: transparent;
+}
+.menu-item:active {
+  background: var(--bg-hover) !important;
+}
+
+/* ── transitions: also honour reduced-motion for transition durations ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

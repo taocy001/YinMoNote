@@ -881,6 +881,12 @@ type authEntry struct {
 	lastSeen time.Time
 }
 
+// maxAuthFailureEntries caps the in-memory failure map to prevent unbounded
+// growth under rotating-IP attacks. When the cap is reached, new IPs that have
+// not previously failed are silently dropped (they still face the global
+// authDelaySem limit). Existing tracked IPs continue to accumulate counts.
+const maxAuthFailureEntries = 1000
+
 var (
 	authFailures   = make(map[string]*authEntry)
 	authFailuresMu sync.Mutex
@@ -985,9 +991,17 @@ func applyAuthDelay(ip string) {
 }
 
 // recordAuthFailure increments the consecutive-failure counter for ip.
+// New IPs are only tracked if the map has not reached maxAuthFailureEntries;
+// this prevents unbounded memory growth under rotating-source-IP attacks.
 func recordAuthFailure(ip string) {
 	authFailuresMu.Lock()
 	if authFailures[ip] == nil {
+		if len(authFailures) >= maxAuthFailureEntries {
+			// Cap reached: skip tracking this new IP to bound memory usage.
+			// The attacker still faces authDelaySem concurrency throttling.
+			authFailuresMu.Unlock()
+			return
+		}
 		authFailures[ip] = &authEntry{}
 	}
 	authFailures[ip].count++
