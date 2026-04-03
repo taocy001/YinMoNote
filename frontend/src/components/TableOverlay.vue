@@ -9,8 +9,8 @@
         class="fixed z-[77] cursor-pointer rounded-sm transition-colors"
         :style="{
           top:       (row.rect.top    + 4) + 'px',
-          left:      (tableRect.left  - 8) + 'px',
-          width:     '5px',
+          left:      (tableRect.left  - 3) + 'px',
+          width:     '8px',
           height:    Math.max(14, row.rect.height - 8) + 'px',
           transform: 'translateX(-100%)',
           background: activeRowIdx === row.index ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 35%, transparent)',
@@ -30,8 +30,8 @@
         class="fixed z-[77] cursor-pointer rounded-sm transition-colors"
         :style="{
           left:      (col.rect.left + 4) + 'px',
-          top:       (tableRect.top - 8) + 'px',
-          height:    '5px',
+          top:       (tableRect.top - 3) + 'px',
+          height:    '8px',
           width:     Math.max(14, col.rect.width - 8) + 'px',
           transform: 'translateY(-100%)',
           background: activeColIdx === col.index ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 35%, transparent)',
@@ -47,7 +47,7 @@
       v-if="tableRect"
       data-table-overlay
       class="fixed z-[78] select-none"
-      :style="{ top: (tableRect.top - 6) + 'px', left: (tableRect.left - 6) + 'px', transform: 'translate(-100%, -100%)' }"
+      :style="{ top: (tableRect.top - 3) + 'px', left: (tableRect.left - 3) + 'px', transform: 'translate(-100%, -100%)' }"
       @mouseenter="keepVisible"
       @mouseleave="scheduleHide"
     >

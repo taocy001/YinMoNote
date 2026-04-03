@@ -222,6 +222,7 @@ import { Extension, type Editor as TiptapEditor } from '@tiptap/core'
 import { TextSelection, Plugin, PluginKey } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import type { Node as ProsemirrorNode } from 'prosemirror-model'
+import { DOMSerializer } from 'prosemirror-model'
 import type { MarkdownSerializerState } from 'prosemirror-markdown'
 import { FloatingMenu } from '@tiptap/extension-floating-menu'
 import StarterKit from '@tiptap/starter-kit'
@@ -544,7 +545,28 @@ const editor = useEditor({
     InlineMath,
     Callout,
     ToggleBlock,
-    Link.configure({ openOnClick: false, autolink: true }), Table.configure({ resizable: true }), TableRow, TableHeader, TableCell,
+    Link.configure({ openOnClick: false, autolink: true }),
+    // Serialize tables as HTML so that column widths (colwidth attribute) are
+    // preserved across save/load. tiptap-markdown's GFM pipe-table format drops
+    // colwidth; HTML round-trips it correctly because TableCell.addAttributes()
+    // emits colwidth as an HTML attribute, and parseHTML reads it back.
+    Table.configure({ resizable: true }).extend({
+      addStorage() {
+        return {
+          markdown: {
+            serialize(state: any, node: any) {
+              const domSerializer = DOMSerializer.fromSchema(node.type.schema)
+              const dom = domSerializer.serializeNode(node)
+              const wrapper = document.createElement('div')
+              wrapper.appendChild(dom as Node)
+              state.write(wrapper.innerHTML)
+              state.closeBlock(node)
+            },
+          },
+        }
+      },
+    }),
+    TableRow, TableHeader, TableCell,
     SearchHighlight,
   ],
   content: '',
