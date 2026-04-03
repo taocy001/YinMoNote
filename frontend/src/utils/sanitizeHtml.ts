@@ -18,6 +18,12 @@ const ALLOWED_TAGS = new Set([
 const ALLOWED_ATTRS = new Set([
   'href', 'src', 'alt', 'title', 'class', 'id',
   'colspan', 'rowspan', 'width', 'height', 'target', 'rel',
+  // Table column-width: format is comma-separated integers, no XSS risk.
+  // Required so that copy-pasting a table within the app preserves column widths.
+  'colwidth',
+  // Cell background colour set by the table background-colour feature.
+  // Stored as a named/hex CSS colour string; no XSS risk.
+  'data-bg-color',
 ])
 
 export function sanitizePastedHtml(html: string): string {

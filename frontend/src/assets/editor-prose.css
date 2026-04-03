@@ -134,14 +134,22 @@
 /* Table styles */
 .ProseMirror .tableWrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* smooth momentum scroll on iOS */
+  touch-action: pan-x pan-y;        /* allow both axes without blocking page scroll */
   margin: 1em 0;
   border-radius: 10px;
   border: 1px solid var(--border);
 }
 .ProseMirror table {
-  width: 100%;
+  /* fixed: honours <col style="width:Xpx"> set by prosemirror-tables columnResizing,
+     so dragged column widths persist visually after save/reload.
+     min-width:100% ensures a new table with no colwidth still fills the container.
+     width:max-content allows tables with colwidth to exceed the container width and
+     let the tableWrapper overflow-x:auto provide horizontal scrolling. */
+  table-layout: fixed;
+  min-width: 100%;
+  width: max-content;
   border-collapse: collapse;
-  table-layout: auto;
 }
 .ProseMirror th {
   background: var(--bg-hover);
@@ -184,6 +192,11 @@
 }
 .ProseMirror.resize-cursor {
   cursor: col-resize;
+}
+/* Hide resize handle on touch devices — drag-to-resize is not usable without a mouse */
+@media (pointer: coarse) {
+  .ProseMirror .column-resize-handle { display: none; }
+  .ProseMirror.resize-cursor { cursor: default; }
 }
 
 /* Placeholder */

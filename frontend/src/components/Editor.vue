@@ -550,7 +550,24 @@ const editor = useEditor({
     // preserved across save/load. tiptap-markdown's GFM pipe-table format drops
     // colwidth; HTML round-trips it correctly because TableCell.addAttributes()
     // emits colwidth as an HTML attribute, and parseHTML reads it back.
+    // The indent attribute shifts the table with margin-left for visual indentation.
     Table.configure({ resizable: true }).extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          indent: {
+            default: 0,
+            parseHTML: el => {
+              const v = parseInt(el.getAttribute('data-indent') || '0', 10)
+              return isNaN(v) ? 0 : Math.max(0, Math.min(v, 10))
+            },
+            renderHTML: attrs => {
+              if (!attrs.indent) return {}
+              return { 'data-indent': attrs.indent, style: `margin-left: ${attrs.indent * 24}px` }
+            },
+          },
+        }
+      },
       addStorage() {
         return {
           markdown: {
@@ -566,7 +583,40 @@ const editor = useEditor({
         }
       },
     }),
-    TableRow, TableHeader, TableCell,
+    TableRow,
+    // TableHeader and TableCell extended with backgroundColor for cell shading.
+    // data-bg-color stores the colour value; an inline style is also emitted so the
+    // HTML export renders correctly in external viewers.
+    TableHeader.extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          backgroundColor: {
+            default: null,
+            parseHTML: el => el.getAttribute('data-bg-color') || null,
+            renderHTML: attrs => {
+              if (!attrs.backgroundColor) return {}
+              return { 'data-bg-color': attrs.backgroundColor, style: `background-color: ${attrs.backgroundColor}` }
+            },
+          },
+        }
+      },
+    }),
+    TableCell.extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          backgroundColor: {
+            default: null,
+            parseHTML: el => el.getAttribute('data-bg-color') || null,
+            renderHTML: attrs => {
+              if (!attrs.backgroundColor) return {}
+              return { 'data-bg-color': attrs.backgroundColor, style: `background-color: ${attrs.backgroundColor}` }
+            },
+          },
+        }
+      },
+    }),
     SearchHighlight,
   ],
   content: '',
