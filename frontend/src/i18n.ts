@@ -211,6 +211,9 @@ const zh = {
   tableInsertColRight: '在右侧插入列',
   tableDeleteCol: '删除列',
   tableDeleteTable: '删除表格',
+  tableToggleHeaderRow: '切换标题行',
+  tableToggleHeaderCol: '切换标题列',
+  tableDistributeCols: '均分列宽',
   // Note actions
   rename: '重命名',
   delete: '删除',
@@ -605,6 +608,9 @@ const en = {
   tableInsertColRight: 'Insert column right',
   tableDeleteCol: 'Delete column',
   tableDeleteTable: 'Delete table',
+  tableToggleHeaderRow: 'Toggle header row',
+  tableToggleHeaderCol: 'Toggle header column',
+  tableDistributeCols: 'Distribute columns evenly',
   // Note actions
   rename: 'Rename',
   delete: 'Delete',
