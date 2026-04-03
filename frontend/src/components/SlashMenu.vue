@@ -53,10 +53,10 @@
             class="h-9 flex items-center justify-center rounded text-sm font-mono transition-colors"
             :style="cmd.id === currentBlockTypeId
               ? 'background: var(--accent-light); color: var(--accent); font-weight: 600;'
-              : 'color: var(--text-secondary);'"
+              : slashIconStyle(cmd.id)"
             @click="executeConvert(cmd)"
             @mouseenter="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'; showTooltip(cmd.title, e) }"
-            @mouseleave="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background='transparent'; hideTooltip() }"
+            @mouseleave="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background=slashIconBg(cmd.id); hideTooltip() }"
           >{{ cmd.icon }}</button>
         </div>
       </div>
@@ -767,12 +767,14 @@ const closeSlashMenu = () => {
 }
 
 // Returns background + text color for each slash command category icon box.
+// Used for both the slash command list and the block-type convert grid.
 const slashIconStyle = (id: string): string => {
   if (/^h[1-6]$/.test(id))      return 'background:rgba(59,130,246,0.12);color:#3b82f6'
   if (id === 'text' || id === 'hr') return 'background:var(--bg-hover);color:var(--text-secondary)'
   if (id === 'ul' || id === 'ol' || id === 'todo') return 'background:rgba(34,197,94,0.12);color:#22c55e'
   if (id === 'code' || id === 'math' || id === 'diagram') return 'background:rgba(107,114,128,0.14);color:var(--text-secondary)'
-  if (id === 'callout-info')    return 'background:rgba(59,130,246,0.12);color:#3b82f6'
+  if (id === 'callout')      return 'background:rgba(234,179,8,0.12);color:#ca8a04'   // block-menu generic callout → amber
+  if (id === 'callout-info') return 'background:rgba(59,130,246,0.12);color:#3b82f6'  // slash-menu info callout → blue
   if (id === 'callout-warning') return 'background:rgba(249,115,22,0.12);color:#f97316'
   if (id === 'callout-tip')     return 'background:rgba(34,197,94,0.12);color:#22c55e'
   if (id === 'callout-danger')  return 'background:rgba(239,68,68,0.12);color:#ef4444'
@@ -781,6 +783,10 @@ const slashIconStyle = (id: string): string => {
   if (id === 'table')  return 'background:rgba(59,130,246,0.10);color:#3b82f6'
   return 'background:var(--bg-hover);color:var(--text-secondary)'
 }
+
+// Extracts only the background value from slashIconStyle so @mouseleave can restore it.
+const slashIconBg = (id: string): string =>
+  slashIconStyle(id).match(/background:([^;]+)/)?.[1] ?? 'transparent'
 
 const adjustSlashMenuPos = () => {
   if (!slashMenuEl.value) return

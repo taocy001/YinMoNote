@@ -56,14 +56,13 @@
         <button
           v-for="btn in inlineButtons"
           :key="btn.key"
-          class="px-3 py-2.5 text-base transition-colors rounded-lg"
+          class="px-3 py-2.5 transition-colors rounded-lg"
           :style="btn.isActive() ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
-          :class="btn.cls"
           @mousedown.prevent
           @click="btn.action()"
           @mouseenter="e => { showTooltip(e, btn.title); if (!btn.isActive()) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { hideTooltip(); if (!btn.isActive()) (e.currentTarget as HTMLElement).style.background='transparent' }"
-        >{{ btn.label }}</button>
+        ><component :is="btn.svgIcon" :size="15" /></button>
 
         <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
 
@@ -99,33 +98,33 @@
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('link')) (e.currentTarget as HTMLElement).style.background='transparent' }"
         ><Link :size="15" /></button>
         <button
-          class="px-3 py-2.5 text-sm font-mono transition-colors rounded-lg"
+          class="px-3 py-2.5 transition-colors rounded-lg"
           :style="props.editor?.isActive('code') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           @mousedown.prevent
           @click="props.editor?.chain().focus().toggleCode().run()"
           @mouseenter="e => { showTooltip(e, t.inlineCode); if (!props.editor?.isActive('code')) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('code')) (e.currentTarget as HTMLElement).style.background='transparent' }"
-        >&lt;/&gt;</button>
+        ><Code :size="15" /></button>
 
         <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
 
         <!-- Group 5: Superscript, subscript -->
         <button
-          class="px-3 py-2.5 text-sm transition-colors rounded-lg"
+          class="px-3 py-2.5 transition-colors rounded-lg"
           :style="props.editor?.isActive('superscript') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           @mousedown.prevent
           @click="props.editor?.chain().focus().toggleSuperscript().run()"
           @mouseenter="e => { showTooltip(e, t.superscript); if (!props.editor?.isActive('superscript')) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('superscript')) (e.currentTarget as HTMLElement).style.background='transparent' }"
-        >X<sup>2</sup></button>
+        ><Superscript :size="15" /></button>
         <button
-          class="px-3 py-2.5 text-sm transition-colors rounded-lg"
+          class="px-3 py-2.5 transition-colors rounded-lg"
           :style="props.editor?.isActive('subscript') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
           @mousedown.prevent
           @click="props.editor?.chain().focus().toggleSubscript().run()"
           @mouseenter="e => { showTooltip(e, t.subscript); if (!props.editor?.isActive('subscript')) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('subscript')) (e.currentTarget as HTMLElement).style.background='transparent' }"
-        >X<sub>2</sub></button>
+        ><Subscript :size="15" /></button>
       </template>
     </div>
 
@@ -217,8 +216,9 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
+import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
-import { Link, ChevronDown, Ban } from 'lucide-vue-next'
+import { Link, ChevronDown, Ban, Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript } from 'lucide-vue-next'
 
 const SAFE_LINK_PROTO = /^(https?|mailto|tel):/i
 
@@ -323,11 +323,11 @@ const applyType = (opt: { action: () => void }) => {
 }
 
 // ── Inline format buttons ─────────────────────────────────────────────────
-const inlineButtons = computed(() => [
-  { key: 'bold',      label: 'B', title: props.t.bold      ?? 'Bold',          cls: 'font-bold',    isActive: () => !!props.editor?.isActive('bold'),      action: () => props.editor?.chain().focus().toggleBold().run() },
-  { key: 'strike',    label: 'S', title: props.t.strike    ?? 'Strikethrough', cls: 'line-through', isActive: () => !!props.editor?.isActive('strike'),    action: () => props.editor?.chain().focus().toggleStrike().run() },
-  { key: 'italic',    label: 'I', title: props.t.italic    ?? 'Italic',        cls: 'italic',       isActive: () => !!props.editor?.isActive('italic'),    action: () => props.editor?.chain().focus().toggleItalic().run() },
-  { key: 'underline', label: 'U', title: props.t.underline ?? 'Underline',     cls: 'underline',    isActive: () => !!props.editor?.isActive('underline'), action: () => props.editor?.chain().focus().toggleUnderline().run() },
+const inlineButtons = computed<{ key: string; svgIcon: Component; title: string; isActive: () => boolean; action: () => void }[]>(() => [
+  { key: 'bold',      svgIcon: Bold,          title: props.t.bold      ?? 'Bold',          isActive: () => !!props.editor?.isActive('bold'),      action: () => props.editor?.chain().focus().toggleBold().run() },
+  { key: 'strike',    svgIcon: Strikethrough, title: props.t.strike    ?? 'Strikethrough', isActive: () => !!props.editor?.isActive('strike'),    action: () => props.editor?.chain().focus().toggleStrike().run() },
+  { key: 'italic',    svgIcon: Italic,        title: props.t.italic    ?? 'Italic',        isActive: () => !!props.editor?.isActive('italic'),    action: () => props.editor?.chain().focus().toggleItalic().run() },
+  { key: 'underline', svgIcon: Underline,     title: props.t.underline ?? 'Underline',     isActive: () => !!props.editor?.isActive('underline'), action: () => props.editor?.chain().focus().toggleUnderline().run() },
 ])
 
 // ── Color state (refs, updated in updateBubble) ───────────────────────────
