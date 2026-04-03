@@ -57,7 +57,7 @@
             @click="executeConvert(cmd)"
             @mouseenter="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'; showTooltip(cmd.title, e) }"
             @mouseleave="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background=slashIconBg(cmd.id); hideTooltip() }"
-          >{{ cmd.icon }}</button>
+          ><component v-if="cmd.svgIcon" :is="cmd.svgIcon" :size="15" /><template v-else>{{ cmd.icon }}</template></button>
         </div>
       </div>
 
@@ -238,7 +238,9 @@
           @mouseenter="slashSelectedIdx = i"
           @mouseleave="e => { if (slashSelectedIdx !== i) (e.currentTarget as HTMLElement).style.background='transparent' }"
         >
-          <span class="w-8 h-8 flex items-center justify-center rounded-lg text-sm shrink-0" :style="slashIconStyle(cmd.id)">{{ cmd.icon }}</span>
+          <span class="w-8 h-8 flex items-center justify-center rounded-lg text-sm shrink-0" :style="slashIconStyle(cmd.id)">
+            <component v-if="cmd.svgIcon" :is="cmd.svgIcon" :size="16" /><template v-else>{{ cmd.icon }}</template>
+          </span>
           <div class="min-w-0 text-left">
             <div class="text-sm font-medium truncate" style="color: var(--text-primary);">{{ cmd.title }}</div>
             <div class="text-xs truncate" style="color: var(--text-muted);">{{ cmd.desc }}</div>
@@ -256,16 +258,17 @@ import type { Editor as TiptapEditor } from '@tiptap/core'
 import {
   GripVertical, Scissors, Copy, FileText, Trash2,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Palette, ChevronRight, Ban,
+  Palette, ChevronRight, Ban, ListTodo, Table2,
 } from 'lucide-vue-next'
 
-// SlashCommand uses icon: string (text/emoji label rendered in the command list icon box).
-// ActionCommand uses svgIcon: Component (Lucide SVG rendered directly in the action row).
+// SlashCommand: icon is a text/emoji fallback; svgIcon (optional) renders a Lucide SVG instead.
+// ActionCommand: svgIcon is required (Lucide SVG rendered directly in the action row).
 interface SlashCommand {
   id: string
   title: string
   desc: string
   icon: string
+  svgIcon?: Component
   action: (ed: TiptapEditor) => void
 }
 interface ActionCommand {
@@ -490,7 +493,7 @@ const calloutTypes = [
 
 // ── Convert commands: 12 types in a 2×6 grid ─────────────────────────────
 // H5/H6 are omitted here; they remain available via the slash menu.
-const convertCommands = computed<{ id: string; title: string; icon: string; action: (ed: TiptapEditor) => void }[]>(() => [
+const convertCommands = computed<{ id: string; title: string; icon: string; svgIcon?: Component; action: (ed: TiptapEditor) => void }[]>(() => [
   { id: 'text',    title: props.t.cmdText,        icon: 'T',   action: (ed) => ed.chain().focus().setParagraph().run() },
   { id: 'h1',      title: props.t.cmdH1,          icon: 'H1',  action: (ed) => ed.chain().focus().setHeading({ level: 1 }).run() },
   { id: 'h2',      title: props.t.cmdH2,          icon: 'H2',  action: (ed) => ed.chain().focus().setHeading({ level: 2 }).run() },
@@ -498,7 +501,7 @@ const convertCommands = computed<{ id: string; title: string; icon: string; acti
   { id: 'h4',      title: props.t.cmdH4,          icon: 'H4',  action: (ed) => ed.chain().focus().setHeading({ level: 4 }).run() },
   { id: 'ul',      title: props.t.cmdUL,          icon: '•',   action: (ed) => ed.chain().focus().toggleBulletList().run() },
   { id: 'ol',      title: props.t.cmdOL,          icon: '1.',  action: (ed) => ed.chain().focus().toggleOrderedList().run() },
-  { id: 'todo',    title: props.t.cmdTodo,        icon: '☑',  action: (ed) => ed.chain().focus().toggleTaskList().run() },
+  { id: 'todo',    title: props.t.cmdTodo,        icon: '☑',  svgIcon: ListTodo, action: (ed) => ed.chain().focus().toggleTaskList().run() },
   { id: 'code',    title: props.t.cmdCode,        icon: '</>', action: (ed) => ed.chain().focus().toggleCodeBlock().run() },
   { id: 'quote',   title: props.t.cmdQuote,       icon: '❝',  action: (ed) => ed.chain().focus().toggleBlockquote().run() },
   { id: 'callout', title: props.t.cmdCalloutInfo, icon: '💡', action: (_ed) => openSubmenu('callout') },
@@ -736,9 +739,9 @@ const slashCommands = computed<SlashCommand[]>(() => [
   { id: 'h6',      title: props.t.cmdH6,      desc: props.t.cmdH6Desc,      icon: 'H6',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleHeading({ level: 6 }).run() },
   { id: 'ul',      title: props.t.cmdUL,      desc: props.t.cmdULDesc,      icon: '•',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleBulletList().run() },
   { id: 'ol',      title: props.t.cmdOL,      desc: props.t.cmdOLDesc,      icon: '1.',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleOrderedList().run() },
-  { id: 'todo',    title: props.t.cmdTodo,    desc: props.t.cmdTodoDesc,    icon: '☑',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleTaskList().run() },
+  { id: 'todo',    title: props.t.cmdTodo,    desc: props.t.cmdTodoDesc,    icon: '☑',  svgIcon: ListTodo, action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleTaskList().run() },
   { id: 'quote',   title: props.t.cmdQuote,   desc: props.t.cmdQuoteDesc,   icon: '❝',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleBlockquote().run() },
-  { id: 'table',   title: props.t.cmdTable,   desc: props.t.cmdTableDesc,   icon: '⊞',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+  { id: 'table',   title: props.t.cmdTable,   desc: props.t.cmdTableDesc,   icon: '⊞',  svgIcon: Table2, action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   { id: 'code',    title: props.t.cmdCode,    desc: props.t.cmdCodeDesc,    icon: '<>',  action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock().run() },
   { id: 'math',    title: props.t.cmdMath,    desc: props.t.cmdMathDesc,    icon: '∑',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock({ language: 'math' }).run() },
   { id: 'diagram', title: props.t.cmdDiagram, desc: props.t.cmdDiagramDesc, icon: '⬡',   action: (ed) => ed.chain().focus().deleteRange(getSlashRange(ed)).toggleCodeBlock({ language: 'mermaid' }).run() },
