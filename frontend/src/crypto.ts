@@ -208,7 +208,7 @@ export async function restoreKeyFromSession(): Promise<boolean> {
       'jwk', jwk, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
     )
     return true
-  } catch (e) {
+  } catch (_e) {
     sessionStorage.removeItem('yinmo_session_key')
     return false
   }
@@ -463,7 +463,7 @@ export async function verifyAndUnlockLibrary(key: CryptoKey): Promise<boolean> {
       await saveKeyToSession(key)
       return true
     }
-  } catch (e) {
+  } catch (_e) {
     // Decryption failure (wrong key or tampered token) — fall through to lockLibrary.
   }
   lockLibrary()
@@ -531,7 +531,7 @@ export async function decryptText(encrypted: string): Promise<string> {
     const data = Uint8Array.from(atob(cipherB64), c => c.charCodeAt(0))
     const decrypted = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, _key, data)
     return new TextDecoder().decode(decrypted)
-  } catch (e) {
+  } catch (_e) {
     return '[Decryption Error]'
   }
 }

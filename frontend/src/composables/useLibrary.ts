@@ -88,6 +88,7 @@ export interface LibraryStructure {
   pinned?: string[]
   trash?: { id: string; deletedAt: number }[]
   commitLabels?: Record<string, string>
+  vaultProxies?: string[]
 }
 
 /** A single item in the flat sidebar display list, derived from LibraryStructure. */
@@ -212,8 +213,8 @@ export function useLibrary() {
    */
   const sanitizeStructure = (s: Partial<LibraryStructure> | null, notes: { name: string }[]): LibraryStructure => {
     const safe: LibraryStructure = s?.order
-      ? { order: s.order, parents: s.parents ?? {}, childOrder: s.childOrder ?? {}, titles: s.titles ?? {}, tags: s.tags ?? {}, pinned: s.pinned ?? [], trash: s.trash ?? [], commitLabels: s.commitLabels ?? {} }
-      : { order: [], parents: {}, childOrder: {}, titles: s?.titles ?? {}, tags: {}, pinned: [], trash: [], commitLabels: {} }
+      ? { order: s.order, parents: s.parents ?? {}, childOrder: s.childOrder ?? {}, titles: s.titles ?? {}, tags: s.tags ?? {}, pinned: s.pinned ?? [], trash: s.trash ?? [], commitLabels: s.commitLabels ?? {}, vaultProxies: s.vaultProxies ?? [] }
+      : { order: [], parents: {}, childOrder: {}, titles: s?.titles ?? {}, tags: {}, pinned: [], trash: [], commitLabels: {}, vaultProxies: [] }
     const idSet = new Set(notes.map(n => n.name))
     // Guard: if the server returned zero notes but the structure has entries,
     // this is almost certainly a transient error (e.g. volume not mounted).
@@ -349,7 +350,7 @@ export function useLibrary() {
       // Axios JSON-encodes string payloads on PUT, so legacy encrypted structures may
       // be stored as a JSON-quoted string: `"ENC1:..."`. Unwrap before detection.
       if (typeof rawData === 'string' && rawData.startsWith('"')) {
-        try { const p = JSON.parse(rawData); if (typeof p === 'string') rawData = p } catch {}
+        try { const p = JSON.parse(rawData); if (typeof p === 'string') rawData = p } catch (_) { /* not a JSON-quoted string */ }
       }
       // Decrypt the structure if the library is currently unlocked; otherwise the
       // encrypted blob will be used as-is and titles will show as IDs until unlock.

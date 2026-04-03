@@ -7,8 +7,8 @@
  * Note: CommandPalette uses <Teleport to="body">, so we query
  * document.body directly instead of the wrapper's DOM.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount, VueWrapper, DOMWrapper } from '@vue/test-utils'
+import { describe, it, expect, afterEach } from 'vitest'
+import { mount, VueWrapper } from '@vue/test-utils'
 import CommandPalette from '../src/components/CommandPalette.vue'
 
 const mockT = {

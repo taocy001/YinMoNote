@@ -5,7 +5,7 @@
       <div class="w-full max-w-sm rounded-2xl overflow-hidden" style="background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
         <div class="px-5 py-3 border-b flex items-center justify-between" style="border-color: var(--border);">
           <span class="font-bold text-sm" style="color: var(--text-primary);">{{ t.shortcutHelpTitle }}</span>
-          <button @click="emit('close')" style="color: var(--text-muted);">
+          <button style="color: var(--text-muted);" @click="emit('close')">
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
         </div>

@@ -8,17 +8,18 @@
         <!-- Panel header -->
         <div class="flex items-center justify-between px-6 py-4 shrink-0" style="border-bottom: 1px solid var(--border);">
           <span class="font-bold text-base" style="color: var(--text-primary);">{{ t.settings }}</span>
-          <button data-testid="settings-close-btn" @click="emit('close')" class="sidebar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all" style="color: var(--text-muted);">
+          <button data-testid="settings-close-btn" class="sidebar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all" style="color: var(--text-muted);" @click="emit('close')">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
         </div>
         <!-- Tab bar -->
         <div class="flex px-6 pt-3 gap-1 shrink-0" style="border-bottom: 1px solid var(--border);">
-          <button v-for="tab in (['appearance', 'editor', 'security', 'ai'] as const)" :key="tab"
+          <button
+v-for="tab in (['appearance', 'editor', 'security', 'ai'] as const)" :key="tab"
             :data-testid="'tab-' + tab"
-            @click="emit('update:settingsTab', tab)"
             class="px-3 py-2 ts-sm font-medium rounded-t-lg transition-all focus-ring"
-            :style="settingsTab === tab ? 'color: var(--accent); border-bottom: 2px solid var(--accent); margin-bottom: -1px;' : 'color: var(--text-muted);'">
+            :style="settingsTab === tab ? 'color: var(--accent); border-bottom: 2px solid var(--accent); margin-bottom: -1px;' : 'color: var(--text-muted);'"
+            @click="emit('update:settingsTab', tab)">
             {{ tab === 'appearance' ? t.appearance : tab === 'security' ? t.security : tab === 'editor' ? t.editor : t.ai }}
           </button>
         </div>
@@ -29,16 +30,16 @@
             <div class="flex items-center justify-between px-4 py-3 rounded-xl" style="background: var(--bg-app); border: 1px solid var(--border);">
               <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.toggleTheme }}</span>
               <div class="flex p-1 rounded-lg gap-1" style="background: var(--bg-hover);">
-                <button data-testid="theme-light-btn" @click="emit('update:draftSettings', { ...draftSettings, themeMode: 'light' })" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.themeMode === 'light' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.themeLight }}</button>
-                <button data-testid="theme-auto-btn" @click="emit('update:draftSettings', { ...draftSettings, themeMode: 'auto' })" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.themeMode === 'auto' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.themeAuto }}</button>
-                <button data-testid="theme-dark-btn" @click="emit('update:draftSettings', { ...draftSettings, themeMode: 'dark' })" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.themeMode === 'dark' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.themeDark }}</button>
+                <button data-testid="theme-light-btn" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.themeMode === 'light' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, themeMode: 'light' })">{{ t.themeLight }}</button>
+                <button data-testid="theme-auto-btn" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.themeMode === 'auto' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, themeMode: 'auto' })">{{ t.themeAuto }}</button>
+                <button data-testid="theme-dark-btn" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.themeMode === 'dark' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, themeMode: 'dark' })">{{ t.themeDark }}</button>
               </div>
             </div>
             <div class="flex items-center justify-between px-4 py-3 rounded-xl" style="background: var(--bg-app); border: 1px solid var(--border);">
               <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.language }}</span>
               <div class="flex p-1 rounded-lg gap-1" style="background: var(--bg-hover);">
-                <button data-testid="lang-zh-btn" @click="emit('update:draftSettings', { ...draftSettings, lang: 'zh' })" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.lang === 'zh' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">中文</button>
-                <button data-testid="lang-en-btn" @click="emit('update:draftSettings', { ...draftSettings, lang: 'en' })" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.lang === 'en' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">English</button>
+                <button data-testid="lang-zh-btn" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.lang === 'zh' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, lang: 'zh' })">中文</button>
+                <button data-testid="lang-en-btn" class="px-3 py-1 text-xs rounded-md transition-all font-medium" :style="draftSettings.lang === 'en' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, lang: 'en' })">English</button>
               </div>
             </div>
           </template>
@@ -48,20 +49,20 @@
             <div class="px-4 py-3 rounded-xl space-y-2" style="background: var(--bg-app); border: 1px solid var(--border);">
               <label class="text-sm font-bold" style="color: var(--text-primary);">{{ t.editorMaxWidth }}</label>
               <div class="flex p-1 rounded-lg gap-1" style="background: var(--bg-hover);">
-                <button @click="emit('update:draftSettings', { ...draftSettings, editorWidth: 'standard' })" class="flex-1 py-1.5 text-xs rounded-md transition-all font-medium" :style="draftSettings.editorWidth === 'standard' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.widthStandard }}</button>
-                <button @click="emit('update:draftSettings', { ...draftSettings, editorWidth: 'full' })" class="flex-1 py-1.5 text-xs rounded-md transition-all font-medium" :style="draftSettings.editorWidth === 'full' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.widthFull }}</button>
+                <button class="flex-1 py-1.5 text-xs rounded-md transition-all font-medium" :style="draftSettings.editorWidth === 'standard' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, editorWidth: 'standard' })">{{ t.widthStandard }}</button>
+                <button class="flex-1 py-1.5 text-xs rounded-md transition-all font-medium" :style="draftSettings.editorWidth === 'full' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:draftSettings', { ...draftSettings, editorWidth: 'full' })">{{ t.widthFull }}</button>
               </div>
             </div>
             <div class="flex items-center justify-between px-4 py-3 rounded-xl" style="background: var(--bg-app); border: 1px solid var(--border);">
               <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.fontSize }} ({{ draftSettings.fontSize }}px)</span>
-              <input type="range" min="12" max="24" :value="draftSettings.fontSize" @input="emit('update:draftSettings', { ...draftSettings, fontSize: Number(($event.target as HTMLInputElement).value) })" class="w-32" style="accent-color: var(--accent);" />
+              <input type="range" min="12" max="24" :value="draftSettings.fontSize" class="w-32" style="accent-color: var(--accent);" @input="emit('update:draftSettings', { ...draftSettings, fontSize: Number(($event.target as HTMLInputElement).value) })" />
             </div>
             <div class="flex items-center justify-between px-4 py-3 rounded-xl" style="background: var(--bg-app); border: 1px solid var(--border);">
               <div>
                 <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.typewriterMode }}</span>
                 <p class="ts-xs mt-0.5" style="color: var(--text-muted);">{{ t.typewriterModeDesc }}</p>
               </div>
-              <ToggleSwitch :modelValue="draftSettings.typewriterMode" :label="String(t.typewriterMode)" @update:modelValue="emit('update:draftSettings', { ...draftSettings, typewriterMode: $event })" />
+              <ToggleSwitch :model-value="draftSettings.typewriterMode" :label="String(t.typewriterMode)" @update:model-value="emit('update:draftSettings', { ...draftSettings, typewriterMode: $event })" />
             </div>
           </template>
 
@@ -73,7 +74,7 @@
                   <span class="text-sm font-bold" style="color: var(--accent);">{{ t.serverEncrypt }}</span>
                   <p class="ts-xs leading-tight mt-0.5" style="color: var(--text-muted);">{{ t.serverEncryptDesc }}</p>
                 </div>
-                <ToggleSwitch :modelValue="draftSettings.serverEncrypt" testId="server-encrypt-toggle" :label="String(t.serverEncrypt)" @update:modelValue="emit('update:draftSettings', { ...draftSettings, serverEncrypt: $event })" />
+                <ToggleSwitch :model-value="draftSettings.serverEncrypt" test-id="server-encrypt-toggle" :label="String(t.serverEncrypt)" @update:model-value="emit('update:draftSettings', { ...draftSettings, serverEncrypt: $event })" />
               </div>
               <div v-if="draftSettings.serverEncrypt" class="px-3 py-2 rounded-lg ts-xs leading-snug" style="background: rgba(255,170,0,0.08); border: 1px solid rgba(255,170,0,0.3); color: var(--text-muted);">{{ t.serverEncryptWebDavWarn }}</div>
               <div v-if="draftSettings.serverEncrypt" class="px-3 py-2 rounded-lg ts-xs leading-snug" style="background: var(--color-warning-light); border: 1px solid rgba(217,119,6,0.2); color: var(--color-warning);">{{ t.serverEncryptHistoryWarn }}</div>
@@ -82,11 +83,11 @@
                   <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.allowExternalImages }}</span>
                   <p class="ts-xs leading-tight mt-0.5" style="color: var(--text-muted);">{{ t.allowExternalImagesDesc }}</p>
                 </div>
-                <ToggleSwitch :modelValue="draftSettings.allowExternalImages" :label="String(t.allowExternalImages)" @update:modelValue="emit('update:draftSettings', { ...draftSettings, allowExternalImages: $event })" />
+                <ToggleSwitch :model-value="draftSettings.allowExternalImages" :label="String(t.allowExternalImages)" @update:model-value="emit('update:draftSettings', { ...draftSettings, allowExternalImages: $event })" />
               </div>
               <div class="flex items-center justify-between px-4 py-3 rounded-xl gap-4" style="background: var(--bg-app); border: 1px solid var(--border);">
                 <span class="text-sm font-bold shrink-0" style="color: var(--text-primary);">{{ t.libTimeoutLabel }}</span>
-                <select data-testid="idle-timeout-select" :value="draftSettings.idleTimeout" @change="emit('update:draftSettings', { ...draftSettings, idleTimeout: Number(($event.target as HTMLSelectElement).value) })" class="p-1.5 rounded-lg border outline-none text-sm" style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit;">
+                <select data-testid="idle-timeout-select" :value="draftSettings.idleTimeout" class="p-1.5 rounded-lg border outline-none text-sm" style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit;" @change="emit('update:draftSettings', { ...draftSettings, idleTimeout: Number(($event.target as HTMLSelectElement).value) })">
                   <option :value="0">{{ t.libTimeoutNever }}</option>
                   <option :value="0.001">{{ t.libTimeoutImmediate }}</option>
                   <option :value="1">1 Min</option>
@@ -117,7 +118,7 @@
                   <div class="px-3 py-2 rounded-lg ts-xs leading-snug" style="background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.3); color: var(--color-success);">{{ t.webdavTokenWarning }}</div>
                   <div class="flex items-center gap-2">
                     <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg truncate" style="background: var(--bg-hover); color: var(--text-primary);">{{ webdavTokenValue }}</code>
-                    <button @click="copyWebDAVToken" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);">
+                    <button class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);" @click="copyWebDAVToken">
                       {{ webdavTokenCopied ? t.webdavTokenCopied : 'Copy' }}
                     </button>
                   </div>
@@ -125,8 +126,8 @@
                 <p v-else-if="!webdavTokenSet" class="ts-xs" style="color: var(--text-muted);">{{ t.webdavTokenNone }}</p>
                 <p v-else class="ts-xs" style="color: var(--text-muted);">••••••••••••••••</p>
                 <div class="flex gap-2 pt-1">
-                  <button @click="emit('webdav-generate-token')" :disabled="webdavTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);">{{ t.webdavTokenGenerate }}</button>
-                  <button v-if="webdavTokenSet || webdavTokenValue" @click="emit('webdav-revoke-token')" :disabled="webdavTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: rgba(239,68,68,0.08); color: var(--color-danger); border: 1px solid rgba(239,68,68,0.2);">{{ t.webdavTokenRevoke }}</button>
+                  <button :disabled="webdavTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);" @click="emit('webdav-generate-token')">{{ t.webdavTokenGenerate }}</button>
+                  <button v-if="webdavTokenSet || webdavTokenValue" :disabled="webdavTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: rgba(239,68,68,0.08); color: var(--color-danger); border: 1px solid rgba(239,68,68,0.2);" @click="emit('webdav-revoke-token')">{{ t.webdavTokenRevoke }}</button>
                 </div>
                 <p v-if="webdavTokenError" class="ts-xs pt-1" style="color: var(--color-danger);">{{ webdavTokenError === 'generate_failed' ? t.webdavTokenGenerateFailed : t.webdavTokenRevokeFailed }}</p>
               </div>
@@ -136,21 +137,25 @@
                   <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.changePassword }}</span>
                   <p class="ts-xs mt-0.5" style="color: var(--text-muted);">{{ t.changePasswordDesc }}</p>
                 </div>
-                <input v-model="cpCurrent" type="password" :placeholder="String(t.currentPassword)"
+                <input
+v-model="cpCurrent" type="password" :placeholder="String(t.currentPassword)"
                   class="w-full px-3 py-2 rounded-lg border text-sm outline-none font-mono"
                   style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary);" />
-                <input v-model="cpNew" type="password" :placeholder="String(t.newPassword)"
+                <input
+v-model="cpNew" type="password" :placeholder="String(t.newPassword)"
                   class="w-full px-3 py-2 rounded-lg border text-sm outline-none font-mono"
                   style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary);" />
-                <input v-model="cpConfirm" type="password" :placeholder="String(t.confirmNewPassword)"
+                <input
+v-model="cpConfirm" type="password" :placeholder="String(t.confirmNewPassword)"
                   class="w-full px-3 py-2 rounded-lg border text-sm outline-none font-mono"
                   style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary);"
                   @keydown.enter="emitChangePassword" />
                 <p v-if="cpError" class="ts-xs font-medium" style="color: var(--color-danger);">{{ cpError }}</p>
                 <p v-if="cpSuccess" class="ts-xs font-medium" style="color: var(--color-success);">{{ cpSuccess }}</p>
-                <button @click="emitChangePassword" :disabled="cpLoading || !cpCurrent || !cpNew || !cpConfirm"
-                  class="w-full py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
-                  style="background: var(--accent); color: white;">
+                <button
+:disabled="cpLoading || !cpCurrent || !cpNew || !cpConfirm" class="w-full py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+                  style="background: var(--accent); color: white;"
+                  @click="emitChangePassword">
                   {{ cpLoading ? '...' : t.changePassword }}
                 </button>
               </div>
@@ -161,7 +166,7 @@
                     <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.libExportKeyTitle }}</span>
                     <p class="ts-xs leading-tight mt-0.5" style="color: var(--text-muted);">{{ t.libExportKeyDesc }}</p>
                   </div>
-                  <button @click="emit('export-key')" class="shrink-0 px-4 py-1.5 rounded-lg text-xs font-bold transition-all" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);">
+                  <button class="shrink-0 px-4 py-1.5 rounded-lg text-xs font-bold transition-all" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);" @click="emit('export-key')">
                     {{ t.libExportAction }}
                   </button>
                 </div>
@@ -175,7 +180,7 @@
             </template>
             <!-- Reset library -->
             <div class="pt-1 space-y-2">
-              <button data-testid="reset-library-btn" @click="emit('open-reset-modal')" class="w-full py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]" style="background: var(--color-danger); color: white;">
+              <button data-testid="reset-library-btn" class="w-full py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]" style="background: var(--color-danger); color: white;" @click="emit('open-reset-modal')">
                 {{ t.libResetBtn }}
               </button>
               <p v-if="batchResultMsg" class="ts-xs font-medium text-center px-2" style="color: var(--color-warning);">{{ batchResultMsg }}</p>
@@ -190,7 +195,7 @@
                 <span class="text-sm font-bold" style="color: var(--accent);">{{ t.mcpEnabled }}</span>
                 <p class="ts-xs leading-tight mt-0.5" style="color: var(--text-muted);">{{ t.mcpEnabledDesc }}</p>
               </div>
-              <ToggleSwitch :modelValue="draftSettings.mcpEnabled" testId="mcp-enabled-toggle" :label="String(t.mcpEnabledLabel ?? 'MCP')" @update:modelValue="emit('update:draftSettings', { ...draftSettings, mcpEnabled: $event })" />
+              <ToggleSwitch :model-value="draftSettings.mcpEnabled" test-id="mcp-enabled-toggle" :label="String(t.mcpEnabledLabel ?? 'MCP')" @update:model-value="emit('update:draftSettings', { ...draftSettings, mcpEnabled: $event })" />
             </div>
 
             <template v-if="draftSettings.mcpEnabled">
@@ -210,7 +215,7 @@
                   <div class="px-3 py-2 rounded-lg ts-xs leading-snug" style="background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.3); color: var(--color-success);">{{ t.mcpTokenWarning }}</div>
                   <div class="flex items-center gap-2">
                     <code class="flex-1 ts-xs font-mono px-2 py-1.5 rounded-lg truncate" style="background: var(--bg-hover); color: var(--text-primary);">{{ mcpTokenValue }}</code>
-                    <button @click="copyToken" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);">
+                    <button class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all" style="background: var(--accent-light); color: var(--accent);" @click="copyToken">
                       {{ tokenCopied ? t.mcpTokenCopied : 'Copy' }}
                     </button>
                   </div>
@@ -218,8 +223,8 @@
                 <p v-else-if="!mcpTokenSet" class="ts-xs" style="color: var(--text-muted);">{{ t.mcpTokenNone }}</p>
                 <p v-else class="ts-xs" style="color: var(--text-muted);">••••••••••••••••</p>
                 <div class="flex gap-2 pt-1">
-                  <button data-testid="mcp-generate-token-btn" @click="emit('mcp-generate-token')" :disabled="mcpTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);">{{ t.mcpTokenGenerate }}</button>
-                  <button v-if="mcpTokenSet || mcpTokenValue" data-testid="mcp-revoke-token-btn" @click="emit('mcp-revoke-token')" :disabled="mcpTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: rgba(239,68,68,0.08); color: var(--color-danger); border: 1px solid rgba(239,68,68,0.2);">{{ t.mcpTokenRevoke }}</button>
+                  <button data-testid="mcp-generate-token-btn" :disabled="mcpTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);" @click="emit('mcp-generate-token')">{{ t.mcpTokenGenerate }}</button>
+                  <button v-if="mcpTokenSet || mcpTokenValue" data-testid="mcp-revoke-token-btn" :disabled="mcpTokenLoading" class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed" style="background: rgba(239,68,68,0.08); color: var(--color-danger); border: 1px solid rgba(239,68,68,0.2);" @click="emit('mcp-revoke-token')">{{ t.mcpTokenRevoke }}</button>
                 </div>
                 <p v-if="mcpTokenError" class="ts-xs pt-1" style="color: var(--color-danger);">{{ mcpTokenError === 'generate_failed' ? t.mcpTokenGenerateFailed : t.mcpTokenRevokeFailed }}</p>
               </div>
@@ -272,10 +277,11 @@ sudo update-ca-certificates</pre>
               <!-- Default access policy -->
               <div class="flex items-center justify-between px-4 py-3 rounded-xl gap-4" style="background: var(--bg-app); border: 1px solid var(--border);">
                 <span class="text-sm font-bold shrink-0" style="color: var(--text-primary);">{{ t.mcpDefaultAccess }}</span>
-                <select :value="draftSettings.mcpDefaultAccess"
-                  @change="emit('update:draftSettings', { ...draftSettings, mcpDefaultAccess: ($event.target as HTMLSelectElement).value })"
+                <select
+:value="draftSettings.mcpDefaultAccess"
                   class="p-1.5 rounded-lg border outline-none text-sm"
-                  style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit;">
+                  style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit;"
+                  @change="emit('update:draftSettings', { ...draftSettings, mcpDefaultAccess: ($event.target as HTMLSelectElement).value })">
                   <option value="read">{{ t.mcpAccessRead }}</option>
                   <option value="write">{{ t.mcpAccessWrite }}</option>
                   <option value="deny">{{ t.mcpAccessDeny }}</option>
@@ -289,37 +295,40 @@ sudo update-ca-certificates</pre>
                     <span class="text-sm font-bold" style="color: var(--text-primary);">{{ t.mcpRules }}</span>
                     <p class="ts-xs mt-0.5" style="color: var(--text-muted);">{{ t.mcpRulesDesc }}</p>
                   </div>
-                  <button @click="addRule" class="px-3 py-1 rounded-lg text-xs font-medium transition-all shrink-0" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);">+ {{ t.mcpAddRule }}</button>
+                  <button class="px-3 py-1 rounded-lg text-xs font-medium transition-all shrink-0" style="background: var(--accent-light); color: var(--accent); border: 1px solid rgba(94,106,210,0.2);" @click="addRule">+ {{ t.mcpAddRule }}</button>
                 </div>
                 <!-- Rule list -->
                 <div v-for="(rule, idx) in draftSettings.mcpRules" :key="idx" class="flex items-center gap-2 p-2 rounded-lg" style="background: var(--bg-hover); border: 1px solid var(--border);">
                   <!-- Condition type -->
-                  <select :value="rule.condition"
-                    @change="updateRule(idx, 'condition', ($event.target as HTMLSelectElement).value)"
+                  <select
+:value="rule.condition"
                     class="ts-xs px-1.5 py-1 rounded-md border outline-none"
-                    style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; width: 100px; flex-shrink: 0;">
+                    style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; width: 100px; flex-shrink: 0;"
+                    @change="updateRule(idx, 'condition', ($event.target as HTMLSelectElement).value)">
                     <option value="tag">{{ t.mcpRuleTag }}</option>
                     <option value="note_id">{{ t.mcpRuleNoteID }}</option>
                     <option value="title_glob">{{ t.mcpRuleTitleGlob }}</option>
                     <option value="subtree_of">{{ t.mcpRuleSubtreeOf }}</option>
                   </select>
                   <!-- Value -->
-                  <input :value="rule.value"
-                    @input="updateRule(idx, 'value', ($event.target as HTMLInputElement).value)"
+                  <input
+:value="rule.value"
                     :placeholder="t.mcpRuleValue as string"
                     class="flex-1 min-w-0 ts-xs px-2 py-1 rounded-md border outline-none"
-                    style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit;" />
+                    style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit;"
+                    @input="updateRule(idx, 'value', ($event.target as HTMLInputElement).value)" />
                   <!-- Access level -->
-                  <select :value="rule.access"
-                    @change="updateRule(idx, 'access', ($event.target as HTMLSelectElement).value)"
+                  <select
+:value="rule.access"
                     class="ts-xs px-1.5 py-1 rounded-md border outline-none"
-                    style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; width: 80px; flex-shrink: 0;">
+                    style="background: var(--bg-editor); border-color: var(--border); color: var(--text-primary); font-family: inherit; width: 80px; flex-shrink: 0;"
+                    @change="updateRule(idx, 'access', ($event.target as HTMLSelectElement).value)">
                     <option value="read">{{ t.mcpAccessRead }}</option>
                     <option value="write">{{ t.mcpAccessWrite }}</option>
                     <option value="deny">{{ t.mcpAccessDeny }}</option>
                   </select>
                   <!-- Remove -->
-                  <button @click="removeRule(idx)" class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-all" style="color: var(--color-danger); background: rgba(239,68,68,0.08);">
+                  <button class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-all" style="color: var(--color-danger); background: rgba(239,68,68,0.08);" @click="removeRule(idx)">
                     <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                   </button>
                 </div>
@@ -334,14 +343,14 @@ sudo update-ca-certificates</pre>
           <div v-if="showSettingsCloseConfirm" class="mb-3 px-4 py-3 rounded-xl flex items-center justify-between gap-3" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);">
             <span class="ts-sm font-medium" style="color: var(--color-warning);">{{ t.unsavedChanges }}</span>
             <div class="flex gap-2 shrink-0">
-              <button @click="emit('update:showSettingsCloseConfirm', false)" class="px-3 py-1 rounded-lg text-xs font-medium transition-all" style="background: var(--bg-hover); color: var(--text-secondary);">{{ t.close }}</button>
-              <button @click="emit('force-close')" class="px-3 py-1 rounded-lg text-xs font-semibold transition-all" style="background: var(--color-warning); color: white;">{{ t.settingsDiscardClose }}</button>
+              <button class="px-3 py-1 rounded-lg text-xs font-medium transition-all" style="background: var(--bg-hover); color: var(--text-secondary);" @click="emit('update:showSettingsCloseConfirm', false)">{{ t.close }}</button>
+              <button class="px-3 py-1 rounded-lg text-xs font-semibold transition-all" style="background: var(--color-warning); color: white;" @click="emit('force-close')">{{ t.settingsDiscardClose }}</button>
             </div>
           </div>
           <p v-if="settingsSaveError" class="ts-xs font-medium text-center mb-2" style="color: var(--color-danger);">{{ t.settingsSaveFailed ?? 'Failed to save settings to server' }}</p>
           <div class="flex justify-between">
-            <button @click="emit('close')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all focus-ring" style="color: var(--text-secondary); background: var(--bg-hover);">{{ t.close }}</button>
-            <button data-testid="settings-apply-btn" @click="emit('apply')" :disabled="batchProcessing" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 disabled:opacity-50 focus-ring" style="background: var(--accent); color: white;">{{ t.apply }}</button>
+            <button class="px-4 py-2 rounded-lg text-sm font-medium transition-all focus-ring" style="color: var(--text-secondary); background: var(--bg-hover);" @click="emit('close')">{{ t.close }}</button>
+            <button data-testid="settings-apply-btn" :disabled="batchProcessing" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 disabled:opacity-50 focus-ring" style="background: var(--accent); color: white;" @click="emit('apply')">{{ t.apply }}</button>
           </div>
         </div>
       </div>

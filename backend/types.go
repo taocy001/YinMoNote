@@ -33,6 +33,12 @@ type Structure struct {
 	Pinned       []string            `json:"pinned,omitempty"`             // pinned note IDs (shown first)
 	Trash        []TrashEntry        `json:"trash,omitempty"`              // soft-deleted notes
 	CommitLabels map[string]string   `json:"commitLabels,omitempty"`       // note ID → custom commit message label
+	// VaultProxies holds the path-segment names (without leading slash) of
+	// single-segment, dot-free directories created via WebDAV MKCOL that are
+	// treated as transparent vault-name prefixes (e.g. Obsidian Remotely Save
+	// base directories).  They are NOT registered as real folder notes in the
+	// virtual tree; instead all requests under them are stripped to root.
+	VaultProxies []string `json:"vaultProxies,omitempty"`
 }
 
 // CommitInfo provides information about a specific git commit.

@@ -21,15 +21,16 @@
         <div v-for="item in results" :key="item.id" class="group">
           <!-- Note title row -->
           <button
-            @click="emit('open-note', item.id, item.snippets[0]?.offset ?? 0)"
             class="w-full text-left px-5 py-2.5 flex items-center gap-2 transition-all"
             :style="'color: var(--text-primary);'"
+            @click="emit('open-note', item.id, item.snippets[0]?.offset ?? 0)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'"
             @mouseleave="e => (e.currentTarget as HTMLElement).style.background = 'transparent'"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="color: var(--text-muted); flex-shrink: 0;"><path d="M3 1.5h5.5L11 4v8.5H3z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M8.5 1.5V4H11" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
             <span class="ts-sm font-semibold truncate">{{ item.title }}</span>
-            <span class="ts-xs tabular-nums shrink-0 px-1.5 py-0.5 rounded-full font-medium"
+            <span
+class="ts-xs tabular-nums shrink-0 px-1.5 py-0.5 rounded-full font-medium"
               style="background: var(--accent-light); color: var(--accent);">
               {{ item.snippets.length }}
             </span>
@@ -39,9 +40,9 @@
           <div class="px-5 pb-3">
             <button
               v-for="(snippet, i) in item.snippets" :key="i"
-              @click="emit('open-note', item.id, snippet.offset)"
               class="w-full text-left block px-3 py-2 rounded-lg ts-sm leading-relaxed transition-all mb-1"
               style="color: var(--text-secondary); border: 1px solid var(--border);"
+              @click="emit('open-note', item.id, snippet.offset)"
               @mouseenter="e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }"
               @mouseleave="e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }"
             >

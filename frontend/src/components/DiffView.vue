@@ -4,7 +4,8 @@
     <div class="shrink-0 flex items-center justify-between px-4 py-2 border-b" style="border-color: var(--border);">
       <div class="flex items-center gap-3">
         <span class="text-sm font-semibold" style="color: var(--text-primary);">{{ t.diffView }}</span>
-        <span v-if="!isComputing && totalChanges > 0" class="text-xs px-2 py-0.5 rounded-full"
+        <span
+v-if="!isComputing && totalChanges > 0" class="text-xs px-2 py-0.5 rounded-full"
           style="background: var(--accent-light); color: var(--accent);">
           {{ totalChanges }} {{ t.diffChanges }}
         </span>
@@ -13,23 +14,26 @@
       </div>
       <div class="flex items-center gap-1">
         <template v-if="!isComputing && totalChanges > 0">
-          <button @click="navigate(-1)" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all text-sm"
-            style="color: var(--text-muted);"
+          <button
+class="w-7 h-7 flex items-center justify-center rounded-lg transition-all text-sm" style="color: var(--text-muted);"
+            :title="t.diffPrev"
+            @click="navigate(-1)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
-            @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'"
-            :title="t.diffPrev">←</button>
+            @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'">←</button>
           <span class="text-xs tabular-nums px-1" style="color: var(--text-muted);">
             {{ currentChangeIdx + 1 }}/{{ totalChanges }}
           </span>
-          <button @click="navigate(1)" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all text-sm"
-            style="color: var(--text-muted);"
+          <button
+class="w-7 h-7 flex items-center justify-center rounded-lg transition-all text-sm" style="color: var(--text-muted);"
+            :title="t.diffNext"
+            @click="navigate(1)"
             @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
-            @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'"
-            :title="t.diffNext">→</button>
+            @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'">→</button>
         </template>
-        <button @click="emit('exit')"
-          class="ml-1 px-3 py-1 text-xs rounded-lg font-medium transition-all active:scale-95"
+        <button
+class="ml-1 px-3 py-1 text-xs rounded-lg font-medium transition-all active:scale-95"
           style="background: var(--bg-hover); color: var(--text-secondary);"
+          @click="emit('exit')"
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--border)'"
           @mouseleave="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'">
           {{ t.diffExitView }}
@@ -40,7 +44,8 @@
     <!-- Computing indicator -->
     <div v-if="isComputing" class="flex-1 flex items-center justify-center">
       <div class="flex flex-col items-center gap-2">
-        <div class="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+        <div
+class="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
           style="border-color: var(--border); border-top-color: var(--accent);"></div>
         <span class="text-xs" style="color: var(--text-muted);">{{ t.diffLoading }}</span>
       </div>
@@ -48,7 +53,7 @@
 
     <!-- Read-only rich-text diff — rendered by a real Tiptap editor with Decoration overlays -->
     <div v-show="!isComputing" ref="scrollEl" class="flex-1 overflow-y-auto">
-      <editor-content
+      <EditorContent
         :editor="diffEditor"
         class="diff-editor-root px-4 md:px-8 pt-6 pb-16 focus:outline-none"
         :class="editorWidth === 'full' ? 'w-full' : 'max-w-3xl mx-auto'"
@@ -99,7 +104,7 @@ import { TableCell } from '@tiptap/extension-table-cell'
 import Typography from '@tiptap/extension-typography'
 import Gapcursor from '@tiptap/extension-gapcursor'
 import { all, createLowlight } from 'lowlight'
-// @ts-ignore — diff-match-patch has no bundled type declarations
+// @ts-expect-error — diff-match-patch has no bundled type declarations
 import DiffMatchPatch from 'diff-match-patch'
 import { InlineMath } from './InlineMath'
 import { Callout } from './Callout'

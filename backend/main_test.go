@@ -824,7 +824,7 @@ func TestCheckAssetQuotaReadDirError(t *testing.T) {
 
 	err := lib.CheckAssetQuota(100)
 	assert.Error(t, err, "CheckAssetQuota should return error when assets dir is unreadable")
-	assert.Equal(t, "quota_check_failed", err.Error())
+	assert.Equal(t, ErrQuotaCheckFailed.Error(), err.Error())
 }
 
 // ─── handleGetHistory pagination ─────────────────────────────────────────────
@@ -886,7 +886,7 @@ func TestHandleSaveNoteErrorOpaque(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code, "quota exceeded returns 400")
 	// The error message should be the quota key, not an internal Go error
-	assert.Contains(t, w.Body.String(), "limit_note_size")
+	assert.Contains(t, w.Body.String(), ErrLimitNoteSize.Error())
 	assert.NotContains(t, w.Body.String(), "/data/", "internal path must not leak in error response")
 }
 
@@ -1082,7 +1082,7 @@ func TestNoteSizeBoundary(t *testing.T) {
 	// One byte over must be rejected with the expected error code.
 	err = lib.CheckNoteQuota("20260320sizeboundary0002.md", 101)
 	assert.Error(t, err)
-	assert.Equal(t, "limit_note_size", err.Error())
+	assert.Equal(t, ErrLimitNoteSize.Error(), err.Error())
 }
 
 // ─── CheckNoteQuota: total notes count (new note vs update) ──────────────────
@@ -1098,7 +1098,7 @@ func TestCheckNoteQuotaTotalNotes(t *testing.T) {
 	// Adding a brand-new (non-existent) note must be rejected.
 	err := lib.CheckNoteQuota("20260320totn000000000003.md", 5)
 	assert.Error(t, err)
-	assert.Equal(t, "limit_total_notes", err.Error())
+	assert.Equal(t, ErrLimitTotalNotes.Error(), err.Error())
 
 	// Updating an existing note must bypass the total-count check entirely.
 	err = lib.CheckNoteQuota("20260320totn000000000001.md", 5)
@@ -1120,7 +1120,7 @@ func TestCheckAssetQuotaTotalAssets(t *testing.T) {
 	// A third asset (small, within MaxAssetSize) must be rejected with limit_total_assets.
 	err := lib.CheckAssetQuota(10)
 	assert.Error(t, err)
-	assert.Equal(t, "limit_total_assets", err.Error())
+	assert.Equal(t, ErrLimitTotalAssets.Error(), err.Error())
 }
 
 // ─── SaveNoteAndCommit + GetHistory + GetContentAtHash integration ────────────
@@ -1403,7 +1403,7 @@ func TestUploadSizeLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code, "upload exceeding MaxAssetSize must return 400")
-	assert.Contains(t, w.Body.String(), "limit_asset_size")
+	assert.Contains(t, w.Body.String(), ErrLimitAssetSize.Error())
 }
 
 // ─── handleOverwriteAsset: body > MaxAssetSize × base64OverheadFactor → 400 ──
@@ -1429,7 +1429,7 @@ func TestHandleOverwriteAssetSizeLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code, "overwrite exceeding size limit must return 400")
-	assert.Contains(t, w.Body.String(), "limit_asset_size")
+	assert.Contains(t, w.Body.String(), ErrLimitAssetSize.Error())
 }
 
 // ─── CheckStructureQuota: maximum nesting depth ───────────────────────────────
@@ -1857,7 +1857,7 @@ func TestCheckStructureQuotaCyclicReference(t *testing.T) {
 	// If this call ever hangs the Go test runner's -timeout flag catches it.
 	err := lib.CheckStructureQuota(s)
 	assert.Error(t, err, "cyclic structure must be detected immediately")
-	assert.Equal(t, "limit_cycle_detected", err.Error())
+	assert.Equal(t, ErrLimitCycleDetected.Error(), err.Error())
 }
 
 // ─── Error path: rollback using another file's commit hash must return 404 ─────
@@ -3889,8 +3889,11 @@ func TestDavVirtualTree(t *testing.T) {
 	// ── MKCOL ────────────────────────────────────────────────────────────────────
 
 	t.Run("MKCOL creates folder note at root and adds to structure", func(t *testing.T) {
+		// Use a name that contains a dot so it is NOT treated as a vault-proxy
+		// candidate (single-segment dot-free paths are vault prefixes per
+		// normalizePath heuristic and become vault proxies instead).
 		lib, davH := vtSetup(t)
-		w := davDo(davH, "MKCOL", "/dav/NewFolder", "")
+		w := davDo(davH, "MKCOL", "/dav/New.Folder", "")
 		assert.Equal(t, http.StatusCreated, w.Code)
 
 		// A new canonical note must exist on disk.
@@ -3899,7 +3902,7 @@ func TestDavVirtualTree(t *testing.T) {
 		for _, e := range entries {
 			if validFileRegex.MatchString(e.Name()) {
 				data, _ := os.ReadFile(filepath.Join(lib.DataDir, e.Name()))
-				if strings.Contains(string(data), "# NewFolder") {
+				if strings.Contains(string(data), "# New.Folder") {
 					newID = e.Name()
 					break
 				}
@@ -3918,6 +3921,174 @@ func TestDavVirtualTree(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "new folder note should be in structure order")
+	})
+
+	// ── Vault proxy (MKCOL of single-segment dot-free paths) ─────────────────
+
+	t.Run("MKCOL single-segment dot-free path registers vault proxy not folder note", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "MKCOL", "/dav/MyVault", "")
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// No new canonical note must have been written to disk.
+		entriesBefore, _ := os.ReadDir(lib.DataDir)
+		notesBefore := 0
+		for _, e := range entriesBefore {
+			if validFileRegex.MatchString(e.Name()) {
+				notesBefore++
+			}
+		}
+		// vtSetup creates exactly 3 canonical notes; count must stay at 3.
+		assert.Equal(t, 3, notesBefore, "vault proxy MKCOL must not create a folder note on disk")
+
+		// The segment must appear in VaultProxies.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		assert.Contains(t, st.VaultProxies, "MyVault")
+	})
+
+	t.Run("MKCOL vault proxy twice is idempotent (returns 201 both times)", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w1 := davDo(davH, "MKCOL", "/dav/MyVault", "")
+		assert.Equal(t, http.StatusCreated, w1.Code)
+		w2 := davDo(davH, "MKCOL", "/dav/MyVault", "")
+		// Repeated MKCOL must be idempotent: WebDAV clients like Remotely Save
+		// re-issue MKCOL on every sync session; a 405 would abort the sync.
+		assert.Equal(t, http.StatusCreated, w2.Code)
+
+		// VaultProxies must still contain exactly one entry (no duplicates).
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		count := 0
+		for _, v := range st.VaultProxies {
+			if v == "MyVault" {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count, "repeated MKCOL must not create duplicate VaultProxies entries")
+	})
+
+	t.Run("vault proxy does not appear in root PROPFIND listing", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		davDo(davH, "MKCOL", "/dav/MyVault", "")
+		w := davDo(davH, "PROPFIND", "/dav/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Equal(t, http.StatusMultiStatus, w.Code)
+		body := w.Body.String()
+		// Root listing must not expose the vault proxy as a subdirectory.
+		assert.NotContains(t, body, "MyVault", "vault proxy should be invisible in root PROPFIND")
+	})
+
+	t.Run("PROPFIND of vault proxy path lists root notes (transparent prefix)", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		davDo(davH, "MKCOL", "/dav/MyVault", "")
+		// PROPFIND /dav/MyVault/ should behave identically to PROPFIND /dav/
+		// — both must return root notes visible to Remotely Save.
+		wVault := davDo(davH, "PROPFIND", "/dav/MyVault/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		wRoot := davDo(davH, "PROPFIND", "/dav/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Equal(t, http.StatusMultiStatus, wVault.Code)
+		assert.Equal(t, http.StatusMultiStatus, wRoot.Code)
+		// Both responses must include the same virtual dir (ProjectA).
+		assert.Contains(t, wVault.Body.String(), "ProjectA", "vault proxy PROPFIND must list root notes")
+		assert.Contains(t, wRoot.Body.String(), "ProjectA")
+	})
+
+	t.Run("DELETE vault proxy removes it from VaultProxies", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		davDo(davH, "MKCOL", "/dav/MyVault", "")
+
+		st := lib.GetStructureParsed()
+		require.Contains(t, st.VaultProxies, "MyVault")
+
+		w := davDo(davH, "DELETE", "/dav/MyVault", "")
+		assert.Equal(t, http.StatusNoContent, w.Code)
+
+		st2 := lib.GetStructureParsed()
+		require.NotNil(t, st2)
+		assert.NotContains(t, st2.VaultProxies, "MyVault", "vault proxy must be removed on DELETE")
+	})
+
+	t.Run("PUT inside vault proxy creates note at root (prefix stripped)", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		davDo(davH, "MKCOL", "/dav/MyVault", "")
+
+		w := davDo(davH, "PUT", "/dav/MyVault/NewNote.md", "# New Note\nContent.")
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// PROPFIND root must list the new note — confirming it landed at root.
+		wRoot := davDo(davH, "PROPFIND", "/dav/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Contains(t, wRoot.Body.String(), "NewNote.md",
+			"note PUT under vault proxy must be visible in root PROPFIND")
+
+		// PROPFIND of vault proxy must also show it (proxy maps to root).
+		wProxy := davDo(davH, "PROPFIND", "/dav/MyVault/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Contains(t, wProxy.Body.String(), "NewNote.md",
+			"note PUT under vault proxy must be visible via proxy PROPFIND")
+
+		// The note must NOT appear inside a nested MyVault subdirectory.
+		assert.NotContains(t, wRoot.Body.String(), "/dav/MyVault/NewNote.md",
+			"note must not be nested under vault proxy path in root listing")
+	})
+
+	t.Run("MKCOL vault proxy coexists with real folder of different name", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		// Create a real folder (name with dot — not a vault-proxy candidate).
+		w1 := davDo(davH, "MKCOL", "/dav/Real.Folder", "")
+		assert.Equal(t, http.StatusCreated, w1.Code)
+		// Create a vault proxy.
+		w2 := davDo(davH, "MKCOL", "/dav/MyVault", "")
+		assert.Equal(t, http.StatusCreated, w2.Code)
+
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		assert.Contains(t, st.VaultProxies, "MyVault", "vault proxy must be registered")
+
+		// Real folder must appear in the root PROPFIND listing.
+		wRoot := davDo(davH, "PROPFIND", "/dav/", `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`)
+		assert.Contains(t, wRoot.Body.String(), "Real.Folder",
+			"real folder must be visible in root PROPFIND")
+
+		// Vault proxy must NOT appear in root listing.
+		assert.NotContains(t, wRoot.Body.String(), "MyVault",
+			"vault proxy must not appear as a subdirectory in root listing")
+
+		// Real folder must have a ChildOrder entry in structure (is a real dir).
+		found := false
+		for id := range st.ChildOrder {
+			if t2 := st.Titles[id]; t2 == "Real.Folder" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "real folder must be registered as virtual dir in structure")
+	})
+
+	t.Run("MKCOL pure-digit name creates real folder note (not vault proxy)", func(t *testing.T) {
+		lib, davH := vtSetup(t)
+		w := davDo(davH, "MKCOL", "/dav/2024", "")
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// Must NOT be registered as a vault proxy.
+		st := lib.GetStructureParsed()
+		require.NotNil(t, st)
+		assert.NotContains(t, st.VaultProxies, "2024", "pure-digit name must not become vault proxy")
+
+		// Must be a real folder note in the structure.
+		found := false
+		for id := range st.ChildOrder {
+			if st.Titles[id] == "2024" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "pure-digit name must create a real folder note")
+	})
+
+	t.Run("MKCOL rs-test- uppercase is blocked (case-insensitive)", func(t *testing.T) {
+		_, davH := vtSetup(t)
+		w := davDo(davH, "MKCOL", "/dav/RS-TEST-connection", "")
+		// isBlockedSegment returns ErrPermission which the webdav package maps to 405.
+		// The key invariant is that the request is rejected (not 201 Created).
+		assert.NotEqual(t, http.StatusCreated, w.Code, "rs-test- variant must be rejected")
 	})
 
 	t.Run("MKCOL inside virtual dir creates nested folder note", func(t *testing.T) {

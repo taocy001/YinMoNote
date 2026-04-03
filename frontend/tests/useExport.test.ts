@@ -156,7 +156,7 @@ describe('useExport – exportMarkdown', () => {
     revokedObjectURLs = []
 
     vi.stubGlobal('URL', {
-      createObjectURL: vi.fn((blob: Blob) => {
+      createObjectURL: vi.fn((_blob: Blob) => {
         const url = 'blob:mock-' + createdObjectURLs.length
         createdObjectURLs.push(url)
         return url

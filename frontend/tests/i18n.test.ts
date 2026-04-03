@@ -119,7 +119,9 @@ describe('sidebar & navigation strings', () => {
   it('en sidebar strings are in English (ASCII)', () => {
     setLang('en')
     const { t } = useI18n()
+    // eslint-disable-next-line no-control-regex
     expect(/^[\x00-\x7F]+$/.test(t.value.myNotes)).toBe(true)
+    // eslint-disable-next-line no-control-regex
     expect(/^[\x00-\x7F]+$/.test(t.value.newNote)).toBe(true)
   })
 })

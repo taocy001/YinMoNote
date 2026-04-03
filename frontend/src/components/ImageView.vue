@@ -1,5 +1,5 @@
 <template>
-  <node-view-wrapper
+  <NodeViewWrapper
     ref="container"
     as="span"
     :class="[
@@ -45,7 +45,7 @@
     >
       {{ currentWidth }}px
     </span>
-  </node-view-wrapper>
+  </NodeViewWrapper>
 </template>
 
 <script setup lang="ts">

@@ -373,7 +373,7 @@ describe('hasServerNotes', () => {
 
 describe('generateId — unbiased distribution', () => {
   it('generates ids with the canonical format: 8 date digits + 16 random + .md', () => {
-    const lib = useLibrary()
+    const _lib = useLibrary()
     // Access generateId indirectly via createNewNote side-effect inspection.
     // Create multiple notes and check format of assigned IDs.
     mockServer([], { order: [], parents: {}, childOrder: {}, titles: {} })

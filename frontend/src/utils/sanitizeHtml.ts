@@ -35,6 +35,7 @@ export function sanitizePastedHtml(html: string): string {
       for (const attr of Array.from(el.attributes)) {
         // Strip all whitespace/control chars before protocol check to defeat
         // HTML entity encoding bypasses like java&#x09;script: or java\nscript:
+        // eslint-disable-next-line no-control-regex
         const val = attr.value.replace(/[\s\x00-\x1f]/g, '')
         if (!ALLOWED_ATTRS.has(attr.name) ||
             (['href', 'src'].includes(attr.name) &&

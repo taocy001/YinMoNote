@@ -31,7 +31,7 @@
                 </div>
                 <p class="text-sm text-center leading-relaxed" style="color: var(--text-muted);">{{ t.libUnlockDeviceHint }}</p>
               </div>
-              <button data-testid="unlock-btn" @click="emit('unlock')" :disabled="isUnlocking" class="group relative w-full py-4 rounded-2xl font-black tracking-widest transition-all active:scale-[0.98] disabled:opacity-50" style="background: var(--accent); color: white; box-shadow: 0 8px 24px rgba(94,106,210,0.35);">
+              <button data-testid="unlock-btn" :disabled="isUnlocking" class="group relative w-full py-4 rounded-2xl font-black tracking-widest transition-all active:scale-[0.98] disabled:opacity-50" style="background: var(--accent); color: white; box-shadow: 0 8px 24px rgba(94,106,210,0.35);" @click="emit('unlock')">
                 <span v-if="!isUnlocking" class="inline-flex items-center gap-2">{{ t.libVerifyIdentityBtn }}<span class="group-hover:translate-x-1 transition-transform">→</span></span>
                 <span v-else class="flex items-center justify-center"><span class="w-5 h-5 border-2 rounded-full animate-spin" style="border-color: rgba(255,255,255,0.3); border-top-color: white;"></span></span>
               </button>
@@ -39,13 +39,13 @@
             <!-- Password unlock -->
             <div v-else class="space-y-4">
               <div class="relative">
-                <input ref="unlockPasswordRef" data-testid="unlock-password-input" :value="unlockPassword" @input="emit('update:unlockPassword', ($event.target as HTMLInputElement).value)" :type="showPassword ? 'text' : 'password'" placeholder="" @keydown.enter="emit('unlock')" class="w-full px-5 py-4 pr-12 rounded-2xl outline-none transition-all font-mono" style="border: 2px solid var(--border); background: transparent; color: var(--text-primary);" />
-                <button type="button" @click="emit('update:showPassword', !showPassword)" class="absolute right-4 top-1/2 -translate-y-1/2 transition-opacity" :style="{ opacity: showPassword ? '1' : '0.4', color: 'var(--text-muted)' }" tabindex="-1">
+                <input ref="unlockPasswordRef" data-testid="unlock-password-input" :value="unlockPassword" :type="showPassword ? 'text' : 'password'" placeholder="" class="w-full px-5 py-4 pr-12 rounded-2xl outline-none transition-all font-mono" style="border: 2px solid var(--border); background: transparent; color: var(--text-primary);" @input="emit('update:unlockPassword', ($event.target as HTMLInputElement).value)" @keydown.enter="emit('unlock')" />
+                <button type="button" class="absolute right-4 top-1/2 -translate-y-1/2 transition-opacity" :style="{ opacity: showPassword ? '1' : '0.4', color: 'var(--text-muted)' }" tabindex="-1" @click="emit('update:showPassword', !showPassword)">
                   <svg v-if="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 </button>
               </div>
-              <button data-testid="unlock-btn" @click="emit('unlock')" :disabled="isUnlocking" class="group relative w-full py-4 rounded-2xl font-black tracking-widest transition-all active:scale-[0.98] disabled:opacity-50" style="background: var(--accent); color: white; box-shadow: 0 8px 24px rgba(94,106,210,0.35);">
+              <button data-testid="unlock-btn" :disabled="isUnlocking" class="group relative w-full py-4 rounded-2xl font-black tracking-widest transition-all active:scale-[0.98] disabled:opacity-50" style="background: var(--accent); color: white; box-shadow: 0 8px 24px rgba(94,106,210,0.35);" @click="emit('unlock')">
                 <span v-if="!isUnlocking" class="inline-flex items-center gap-2">{{ t.libUnlockAction }}<span class="group-hover:translate-x-1 transition-transform">→</span></span>
                 <span v-else class="flex items-center justify-center"><span class="w-5 h-5 border-2 rounded-full animate-spin" style="border-color: rgba(255,255,255,0.3); border-top-color: white;"></span></span>
               </button>
@@ -70,10 +70,10 @@
               </div>
               <!-- Tab row -->
               <div class="flex p-1.5 rounded-2xl" style="background: var(--bg-app);">
-                <button data-testid="mode-tab-none" @click="emit('update:unlockMode', 'none')" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'none' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.libModeNone }}</button>
-                <button data-testid="mode-tab-password" @click="emit('update:unlockMode', 'password')" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'password' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.libModePassword }}</button>
-                <button v-if="hasServerNotes" data-testid="mode-tab-import" @click="emit('update:unlockMode', 'import')" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'import' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.libModeImport }}</button>
-                <button v-if="webauthnAvailable" data-testid="mode-tab-device" @click="emit('update:unlockMode', 'device')" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'device' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'">{{ t.libModeDevice }}</button>
+                <button data-testid="mode-tab-none" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'none' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:unlockMode', 'none')">{{ t.libModeNone }}</button>
+                <button data-testid="mode-tab-password" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'password' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:unlockMode', 'password')">{{ t.libModePassword }}</button>
+                <button v-if="hasServerNotes" data-testid="mode-tab-import" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'import' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:unlockMode', 'import')">{{ t.libModeImport }}</button>
+                <button v-if="webauthnAvailable" data-testid="mode-tab-device" class="flex-1 py-2.5 text-sm rounded-xl transition-all duration-300 font-medium" :style="unlockMode === 'device' ? 'background: var(--bg-editor); color: var(--text-primary); box-shadow: var(--shadow-sm);' : 'color: var(--text-muted);'" @click="emit('update:unlockMode', 'device')">{{ t.libModeDevice }}</button>
               </div>
               <!-- Mode content -->
               <div class="space-y-3">
@@ -94,8 +94,8 @@
                 <div v-else-if="unlockMode === 'password'" class="space-y-2 animate-in fade-in slide-in-from-top-2">
                   <p class="ts-xs text-center leading-relaxed" style="color: var(--text-muted);">{{ t.libInitPasswordHint }}</p>
                   <div class="relative">
-                    <input data-testid="unlock-password-input" :value="unlockPassword" @input="emit('update:unlockPassword', ($event.target as HTMLInputElement).value)" :type="showPassword ? 'text' : 'password'" placeholder="" @keydown.enter="emit('unlock')" class="w-full px-5 py-4 pr-12 rounded-2xl outline-none transition-all font-mono" style="border: 2px solid var(--border); background: transparent; color: var(--text-primary);" />
-                    <button type="button" @click="emit('update:showPassword', !showPassword)" class="absolute right-4 top-1/2 -translate-y-1/2 transition-opacity" :style="{ opacity: showPassword ? '1' : '0.4', color: 'var(--text-muted)' }" tabindex="-1">
+                    <input data-testid="unlock-password-input" :value="unlockPassword" :type="showPassword ? 'text' : 'password'" placeholder="" class="w-full px-5 py-4 pr-12 rounded-2xl outline-none transition-all font-mono" style="border: 2px solid var(--border); background: transparent; color: var(--text-primary);" @input="emit('update:unlockPassword', ($event.target as HTMLInputElement).value)" @keydown.enter="emit('unlock')" />
+                    <button type="button" class="absolute right-4 top-1/2 -translate-y-1/2 transition-opacity" :style="{ opacity: showPassword ? '1' : '0.4', color: 'var(--text-muted)' }" tabindex="-1" @click="emit('update:showPassword', !showPassword)">
                       <svg v-if="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                     </button>
@@ -105,7 +105,7 @@
                 <!-- Import: hint + textarea -->
                 <div v-else-if="unlockMode === 'import'" class="space-y-2 animate-in fade-in slide-in-from-top-2">
                   <p class="ts-xs text-center leading-relaxed" style="color: var(--text-muted);">{{ t.libImportKeyHint }}</p>
-                  <textarea :value="importKeyText" @input="emit('update:importKeyText', ($event.target as HTMLTextAreaElement).value)" :placeholder="(t.libImportKeyPlaceholder as string)" class="w-full px-5 py-4 rounded-2xl outline-none transition-all h-28 text-xs font-mono resize-none" style="border: 2px solid var(--border); background: transparent; color: var(--text-primary);"></textarea>
+                  <textarea :value="importKeyText" :placeholder="(t.libImportKeyPlaceholder as string)" class="w-full px-5 py-4 rounded-2xl outline-none transition-all h-28 text-xs font-mono resize-none" style="border: 2px solid var(--border); background: transparent; color: var(--text-primary);" @input="emit('update:importKeyText', ($event.target as HTMLTextAreaElement).value)"></textarea>
                 </div>
                 <!-- None: hint -->
                 <div v-else-if="unlockMode === 'none'">
@@ -113,7 +113,7 @@
                 </div>
               </div>
               <!-- Action button with mode-specific label -->
-              <button data-testid="unlock-btn" @click="emit('unlock')" :disabled="isUnlocking" class="group relative w-full py-4 rounded-2xl font-black tracking-widest transition-all active:scale-[0.98] disabled:opacity-50" style="background: var(--accent); color: white; box-shadow: 0 8px 24px rgba(94,106,210,0.35);">
+              <button data-testid="unlock-btn" :disabled="isUnlocking" class="group relative w-full py-4 rounded-2xl font-black tracking-widest transition-all active:scale-[0.98] disabled:opacity-50" style="background: var(--accent); color: white; box-shadow: 0 8px 24px rgba(94,106,210,0.35);" @click="emit('unlock')">
                 <span v-if="!isUnlocking" class="inline-flex items-center gap-2">
                   <template v-if="unlockMode === 'device'">{{ t.libInitDeviceBtn }}</template>
                   <template v-else-if="unlockMode === 'import'">{{ t.libInitImportBtn }}</template>

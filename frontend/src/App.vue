@@ -4,23 +4,23 @@
     <aside v-if="isDesktop || showMobileSidebar" :class="sidebarClass" :style="sidebarStyle">
       <!-- Collapsed icon bar (desktop only) — click anywhere blank to expand -->
       <template v-if="isDesktop && !sidebarVisible">
-        <div class="flex flex-col items-center gap-2 py-3 flex-1 cursor-pointer" @click="sidebarVisible = true" :title="t.expandSidebar">
+        <div class="flex flex-col items-center gap-2 py-3 flex-1 cursor-pointer" :title="t.expandSidebar" @click="sidebarVisible = true">
           <!-- Expand toggle — first/top position -->
-          <button @click.stop="sidebarVisible = true" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);">
+          <button class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" @click.stop="sidebarVisible = true">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4.5 2.5L7.5 6L4.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <!-- New note icon (hidden when library is locked) -->
-          <button v-if="!isLibraryLocked" @click.stop="createNewNote" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.newNote">
+          <button v-if="!isLibraryLocked" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.newNote" @click.stop="createNewNote">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
           <!-- Search icon (hidden when library is locked) -->
-          <button v-if="!isLibraryLocked" @click.stop="expandAndFocusSearch" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.searchPlaceholder">
+          <button v-if="!isLibraryLocked" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.searchPlaceholder" @click.stop="expandAndFocusSearch">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 9.5L12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </button>
           <!-- Spacer to push lock to bottom -->
           <div class="flex-1"></div>
           <!-- Lock (when unlocked) -->
-          <button v-if="!isLibraryLocked && !isKeylessModeActive" @click.stop="handleLockLibrary" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] mb-1" style="color: var(--text-muted);" :title="t.lockLibrary">
+          <button v-if="!isLibraryLocked && !isKeylessModeActive" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] mb-1" style="color: var(--text-muted);" :title="t.lockLibrary" @click.stop="handleLockLibrary">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2.5" y="6.5" width="9" height="6" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </button>
         </div>
@@ -31,7 +31,7 @@
         <!-- Header: logo (clickable on desktop) on left, collapse/close arrow on right -->
         <div class="px-3 pt-3 pb-2 flex items-center gap-2 shrink-0">
           <!-- Logo: clickable to collapse on desktop -->
-          <button v-if="isDesktop" @click="sidebarVisible = false" class="flex items-center gap-1.5 flex-1 min-w-0 px-1 py-1 rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-primary);" :title="t.collapseSidebar">
+          <button v-if="isDesktop" class="flex items-center gap-1.5 flex-1 min-w-0 px-1 py-1 rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-primary);" :title="t.collapseSidebar" @click="sidebarVisible = false">
             <div class="w-6 h-6 flex items-center justify-center rounded-md shrink-0" style="background: var(--accent-light); color: var(--accent);">
               <svg width="14" height="14" viewBox="0 0 18 18" fill="none"><path d="M9 2C9 2 3.5 7.5 3.5 11a5.5 5.5 0 0 0 11 0C14.5 7.5 9 2 9 2z" fill="currentColor" opacity="0.9"/><ellipse cx="11" cy="10" rx="1.5" ry="2" fill="white" opacity="0.35"/></svg>
             </div>
@@ -45,11 +45,11 @@
             <span class="font-bold ts-base tracking-[-0.02em] truncate" style="color: var(--text-primary);">{{ t.logo }}</span>
           </div>
           <!-- Collapse button (desktop) — right side, where + was -->
-          <button v-if="isDesktop" @click="sidebarVisible = false" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] shrink-0" style="color: var(--text-muted);" :title="t.collapseSidebar">
+          <button v-if="isDesktop" class="sidebar-btn focus-ring w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] shrink-0" style="color: var(--text-muted);" :title="t.collapseSidebar" @click="sidebarVisible = false">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 2.5L4.5 6L7.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <!-- Mobile close -->
-          <button v-if="!isDesktop" @click="showMobileSidebar = false" class="sidebar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-all shrink-0" style="color: var(--text-muted);">
+          <button v-if="!isDesktop" class="sidebar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-all shrink-0" style="color: var(--text-muted);" @click="showMobileSidebar = false">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
         </div>
@@ -57,12 +57,12 @@
         <template v-if="!isLibraryLocked">
         <!-- New Note + Import buttons -->
         <div class="px-3 pb-2 shrink-0 flex gap-2">
-          <button data-testid="new-note-btn" @click="createNewNote" class="new-note-btn focus-ring flex-1 flex items-center gap-2 px-3 py-2 rounded-xl ts-sm font-medium transition-all active:scale-[0.97]" style="background: var(--bg-hover); color: var(--text-secondary); border: 1px solid var(--border);">
+          <button data-testid="new-note-btn" class="new-note-btn focus-ring flex-1 flex items-center gap-2 px-3 py-2 rounded-xl ts-sm font-medium transition-all active:scale-[0.97]" style="background: var(--bg-hover); color: var(--text-secondary); border: 1px solid var(--border);" @click="createNewNote">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             <span>{{ t.newNote }}</span>
           </button>
           <div class="relative">
-            <button @click="showImportMenu = !showImportMenu" class="h-full px-2.5 rounded-xl ts-sm font-medium transition-all active:scale-[0.97]" style="background: var(--bg-hover); color: var(--text-muted); border: 1px solid var(--border);" :title="t.importNotes">
+            <button class="h-full px-2.5 rounded-xl ts-sm font-medium transition-all active:scale-[0.97]" style="background: var(--bg-hover); color: var(--text-muted); border: 1px solid var(--border);" :title="t.importNotes" @click="showImportMenu = !showImportMenu">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9 1H4.5A1.5 1.5 0 0 0 3 2.5v11A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V5L9 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 7v4M6 9l2 2 2-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
@@ -78,7 +78,8 @@
             <div class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style="color: var(--text-muted);">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 9.5L12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             </div>
-            <input data-testid="search-input" ref="searchInputRef" v-model="searchQuery" :placeholder="t.searchPlaceholder"
+            <input
+ref="searchInputRef" v-model="searchQuery" data-testid="search-input" :placeholder="t.searchPlaceholder"
               class="search-input focus-ring w-full pl-9 pr-3 py-2 ts-sm rounded-xl outline-none transition-all"
               style="background: var(--bg-editor); border: 1px solid var(--border); color: var(--text-primary); font-family: inherit;"
             />
@@ -87,23 +88,26 @@
           </div>
           <!-- Tag chips -->
           <div v-if="allTags.length > 0" class="flex flex-wrap gap-1 mt-2">
-            <button @click="activeTagFilter = ''"
-              :style="activeTagFilter === '' ? 'background:var(--accent);color:white;border-color:var(--accent)' : 'background:transparent;color:var(--text-muted);border-color:var(--border)'"
-              class="px-2.5 py-0.5 rounded-full ts-xs font-medium border transition-all">{{ t.tagFilterAll }}</button>
-            <button v-for="tag in allTags" :key="tag" @click="activeTagFilter = activeTagFilter === tag ? '' : tag"
-              :style="activeTagFilter === tag ? 'background:var(--accent);color:white;border-color:var(--accent)' : 'background:transparent;color:var(--text-muted);border-color:var(--border)'"
-              class="px-2.5 py-0.5 rounded-full ts-xs font-medium border transition-all"># {{ tag }}</button>
+            <button
+:style="activeTagFilter === '' ? 'background:var(--accent);color:white;border-color:var(--accent)' : 'background:transparent;color:var(--text-muted);border-color:var(--border)'"
+              class="px-2.5 py-0.5 rounded-full ts-xs font-medium border transition-all"
+              @click="activeTagFilter = ''">{{ t.tagFilterAll }}</button>
+            <button
+v-for="tag in allTags" :key="tag" :style="activeTagFilter === tag ? 'background:var(--accent);color:white;border-color:var(--accent)' : 'background:transparent;color:var(--text-muted);border-color:var(--border)'"
+              class="px-2.5 py-0.5 rounded-full ts-xs font-medium border transition-all"
+              @click="activeTagFilter = activeTagFilter === tag ? '' : tag"># {{ tag }}</button>
           </div>
         </div>
 
         <!-- Note list -->
         <nav class="flex-1 overflow-y-auto px-2 pb-20" style="scrollbar-width: thin; scrollbar-color: var(--border) transparent;" @dragover.prevent="onSidebarDragOver" @drop="onSidebarDrop" @scroll="handleSidebarScroll">
-          <div v-for="item in displayList" :key="item.key"
+          <div
+v-for="item in displayList" :key="item.key"
             data-testid="note-item" :data-note-key="item.key"
-            :draggable="true" @dragstart="onNoteDragStart($event, item.key)" @dragover.prevent.stop="onNoteDragOver($event, item.key)" @drop.prevent.stop="onNoteDrop($event, item.key)" @dragend="onNoteDragEnd"
-            :style="{ paddingLeft: (item.level * 14 + 8) + 'px', opacity: draggedKey === item.key ? '0.2' : '1' }"
-            class="group relative flex items-center gap-2 h-[36px] my-[1px] rounded-lg cursor-pointer transition-all duration-150 select-none ts-sm pr-2"
-            :class="currentNote === item.key ? 'note-item-active' : 'note-item-default'"
+            :draggable="true" :style="{ paddingLeft: (item.level * 14 + 8) + 'px', opacity: draggedKey === item.key ? '0.2' : '1' }" class="group relative flex items-center gap-2 h-[36px] my-[1px] rounded-lg cursor-pointer transition-all duration-150 select-none ts-sm pr-2" :class="currentNote === item.key ? 'note-item-active' : 'note-item-default'" @dragstart="onNoteDragStart($event, item.key)"
+            @dragover.prevent.stop="onNoteDragOver($event, item.key)"
+            @drop.prevent.stop="onNoteDrop($event, item.key)"
+            @dragend="onNoteDragEnd"
             @click="selectNote(item.key)" @dblclick="selectNotePinned(item.key)"
           >
             <!-- Drag-drop position indicators -->
@@ -114,7 +118,7 @@
             <div v-if="currentNote === item.key" class="absolute left-0 top-[6px] bottom-[6px] w-[2.5px] rounded-full" style="background: var(--accent);"></div>
 
             <!-- Collapse toggle -->
-            <button v-if="item.hasChildren" @click.stop="toggleCollapse(item.key)" class="shrink-0 w-4 h-4 flex items-center justify-center transition-all" style="color: var(--text-muted);">
+            <button v-if="item.hasChildren" class="shrink-0 w-4 h-4 flex items-center justify-center transition-all" style="color: var(--text-muted);" @click.stop="toggleCollapse(item.key)">
               <svg v-if="item.isCollapsed" width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M4.5 2.5L7.5 6L4.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <svg v-else width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 7.5L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
@@ -129,47 +133,27 @@
             <!-- Pin indicator (always visible when pinned) -->
             <svg v-if="item.isPinned" class="shrink-0" width="10" height="10" viewBox="0 0 16 16" fill="none" style="color: var(--accent); opacity: 0.7;"><path d="M9.828 2.172a1.5 1.5 0 0 1 2.121 0l1.879 1.879a1.5 1.5 0 0 1 0 2.121L11 9l-.5 3.5L7 9l-3.5.5L6.5 5l-2.828-2.828z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.2"/><path d="M3.5 12.5L7 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
 
-            <!-- Hover action buttons: absolutely positioned so they don't consume flex space.
-                 Title (flex-1) fills available width; center-click always lands in the title area.
-                 pointer-events-none when hidden prevents Playwright hover-before-click from
-                 intercepting the click even after group-hover activates opacity. -->
-            <div class="absolute right-0 inset-y-0 hidden md:flex items-center gap-1 pr-2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
-              <button @click.stop="openTagEdit(item.key, noteTags[item.key] || [])"
-                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
-                style="color: var(--text-muted);" :title="t.tagEdit">
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h4.2l4.8 4.8-4.2 4.2L1.5 5.7V1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.8" fill="currentColor"/></svg>
-              </button>
-              <button @click.stop="createSubNote(item.key)"
-                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
-                style="color: var(--text-muted);" :title="t.createSubNote">
-                <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              </button>
-              <button data-testid="note-delete-btn" @click.stop="confirmDeleteNote(item.key)"
-                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
-                style="color: var(--color-danger);" :title="t.delete">
-                <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2.5 3.5h9M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <button @click.stop="openNoteMenu($event, item.key)"
-                class="sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all"
-                style="color: var(--text-muted);" data-testid="note-more-btn">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
-              </button>
-            </div>
+            <!-- More menu button: hover-only on desktop, always visible on mobile -->
+            <button @click.stop="openNoteMenu($event, item.key)" class="md:opacity-0 md:group-hover:opacity-100 sidebar-btn w-5 h-5 flex items-center justify-center rounded transition-all shrink-0" style="color: var(--text-muted);" data-testid="note-more-btn">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
+            </button>
 
             <!-- Inline tag editor popup -->
-            <Teleport to="body" v-if="tagEditKey === item.key">
+            <Teleport v-if="tagEditKey === item.key" to="body">
               <div class="fixed inset-0 z-[150]" @click.self="cancelTagEdit">
-                <div class="absolute z-[160] p-3 rounded-xl w-56"
+                <div
+class="absolute z-[160] p-3 rounded-xl w-56"
                   style="top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
                   <p class="text-xs font-bold mb-2" style="color: var(--text-muted);">{{ t.tagEdit }}</p>
-                  <input v-model="tagEditValue" @keydown.enter="saveTagEdit" @keydown.esc="cancelTagEdit"
-                    :placeholder="t.tagPlaceholder"
-                    class="w-full px-2 py-1.5 text-sm rounded-lg border outline-none transition-all"
+                  <input
+v-model="tagEditValue" :placeholder="t.tagPlaceholder" class="w-full px-2 py-1.5 text-sm rounded-lg border outline-none transition-all"
                     style="background: var(--bg-app); border-color: var(--border); color: var(--text-primary); font-family: inherit;"
-                    autofocus />
+                    autofocus
+                    @keydown.enter="saveTagEdit"
+                    @keydown.esc="cancelTagEdit" />
                   <div class="flex gap-2 mt-2">
-                    <button @click="saveTagEdit" class="flex-1 py-1 text-xs rounded-lg font-semibold transition-all" style="background: var(--accent); color: white;">{{ t.tagSave }}</button>
-                    <button @click="cancelTagEdit" class="flex-1 py-1 text-xs rounded-lg transition-all" style="background: var(--bg-hover); color: var(--text-secondary);">{{ t.close }}</button>
+                    <button class="flex-1 py-1 text-xs rounded-lg font-semibold transition-all" style="background: var(--accent); color: white;" @click="saveTagEdit">{{ t.tagSave }}</button>
+                    <button class="flex-1 py-1 text-xs rounded-lg transition-all" style="background: var(--bg-hover); color: var(--text-secondary);" @click="cancelTagEdit">{{ t.close }}</button>
                   </div>
                 </div>
               </div>
@@ -189,13 +173,13 @@
         <div class="absolute bottom-0 left-0 right-0 px-3 py-2 shrink-0" style="background: var(--bg-sidebar); border-top: 1px solid var(--border); box-shadow: 0 -2px 8px rgba(0,0,0,0.04);">
           <div class="flex items-center justify-between">
             <!-- Trash button -->
-            <button @click="showTrash = !showTrash" class="sidebar-btn flex items-center gap-2 px-2 py-1.5 rounded-lg ts-xs font-medium transition-all active:scale-[0.97]" :style="showTrash ? 'color:var(--accent)' : 'color:var(--text-muted)'">
+            <button class="sidebar-btn flex items-center gap-2 px-2 py-1.5 rounded-lg ts-xs font-medium transition-all active:scale-[0.97]" :style="showTrash ? 'color:var(--accent)' : 'color:var(--text-muted)'" @click="showTrash = !showTrash">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2.5 3.5h9M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span>{{ t.trash }}</span>
               <span v-if="trashDisplayList.length > 0" class="ml-0.5 px-1 py-0 rounded-full ts-xs font-bold" style="background: var(--bg-hover);">{{ trashDisplayList.length }}</span>
             </button>
             <!-- Lock button -->
-            <button data-testid="sidebar-lock-btn" v-if="!isLibraryLocked && !isKeylessModeActive" @click="handleLockLibrary" class="sidebar-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ts-sm font-medium transition-all active:scale-[0.97]" style="color: var(--text-secondary);" :title="t.lockLibrary">
+            <button v-if="!isLibraryLocked && !isKeylessModeActive" data-testid="sidebar-lock-btn" class="sidebar-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ts-sm font-medium transition-all active:scale-[0.97]" style="color: var(--text-secondary);" :title="t.lockLibrary" @click="handleLockLibrary">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2.5" y="6.5" width="9" height="6" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
               <span>{{ t.lockLibrary }}</span>
             </button>
@@ -213,11 +197,11 @@
                     <div class="truncate ts-sm font-medium" style="color: var(--text-secondary);">{{ item.label }}</div>
                     <div class="ts-xs mt-0.5" style="color: var(--text-muted);">{{ t.trashDaysLeft(item.daysLeft) }}</div>
                   </div>
-                  <button @click="restoreNote(item.key)" class="ts-xs px-2 py-1 rounded-md shrink-0 opacity-0 group-hover:opacity-100 transition-all" style="background: var(--accent-light); color: var(--accent);">{{ t.restoreNote }}</button>
-                  <button @click="permanentDeleteNote(item.key)" class="ts-xs px-2 py-1 rounded-md shrink-0 opacity-0 group-hover:opacity-100 transition-all" style="background: rgba(239,68,68,0.08); color: var(--color-danger);">{{ t.permanentDelete }}</button>
+                  <button class="ts-xs px-2 py-1 rounded-md shrink-0 opacity-0 group-hover:opacity-100 transition-all" style="background: var(--accent-light); color: var(--accent);" @click="restoreNote(item.key)">{{ t.restoreNote }}</button>
+                  <button class="ts-xs px-2 py-1 rounded-md shrink-0 opacity-0 group-hover:opacity-100 transition-all" style="background: rgba(239,68,68,0.08); color: var(--color-danger);" @click="permanentDeleteNote(item.key)">{{ t.permanentDelete }}</button>
                 </div>
               </div>
-              <button @click="emptyTrash" class="w-full py-2 ts-xs font-medium transition-all shrink-0" style="color: var(--color-danger); background: rgba(239,68,68,0.05); border-top: 1px solid var(--border);">{{ t.emptyTrash }}</button>
+              <button class="w-full py-2 ts-xs font-medium transition-all shrink-0" style="color: var(--color-danger); background: rgba(239,68,68,0.05); border-top: 1px solid var(--border);" @click="emptyTrash">{{ t.emptyTrash }}</button>
             </div>
           </div>
         </div>
@@ -231,7 +215,7 @@
       <!-- Mobile header -->
       <header class="md:hidden flex items-center gap-2 px-3 py-2 shrink-0" style="background: var(--bg-sidebar); border-bottom: 1px solid var(--border);">
         <!-- Hamburger -->
-        <button @click="showMobileSidebar = true" class="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all active:scale-[0.97]" style="color: var(--text-secondary);">
+        <button class="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all active:scale-[0.97]" style="color: var(--text-secondary);" @click="showMobileSidebar = true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         </button>
         <!-- Note title — fills remaining space -->
@@ -239,26 +223,29 @@
         <!-- Right action group -->
         <div class="flex items-center gap-0.5 shrink-0">
           <!-- Save-status pill: amber when dirty (tappable to save), pulsing dot when saving -->
-          <button v-if="editorRef?.saveStatus === 'dirty'" @click="editorRef?.doSave()"
-            class="flex items-center gap-1 px-2 py-1 rounded-md transition-all active:scale-[0.97]"
-            style="background: rgba(217,119,6,0.08);">
+          <button
+v-if="editorRef?.saveStatus === 'dirty'" class="flex items-center gap-1 px-2 py-1 rounded-md transition-all active:scale-[0.97]"
+            style="background: rgba(217,119,6,0.08);"
+            @click="editorRef?.doSave()">
             <div class="w-1.5 h-1.5 rounded-full" style="background: var(--color-warning);"></div>
             <span class="ts-xs font-medium" style="color: var(--color-warning);">{{ t.unsaved }}</span>
           </button>
           <div v-else-if="editorRef?.saveStatus === 'saving'" class="w-2 h-2 rounded-full animate-pulse mx-2" style="background: var(--accent);"></div>
           <!-- More button — history / export (only when a note is open and unlocked) -->
-          <button v-if="currentNote && !isLibraryLocked" @click="showMobileMore = !showMobileMore"
-            class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
-            :style="showMobileMore ? 'background:var(--accent-light);color:var(--accent)' : 'color:var(--text-secondary)'">
+          <button
+v-if="currentNote && !isLibraryLocked" class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
+            :style="showMobileMore ? 'background:var(--accent-light);color:var(--accent)' : 'color:var(--text-secondary)'"
+            @click="showMobileMore = !showMobileMore">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="3" r="1.2" fill="currentColor"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/><circle cx="7" cy="11" r="1.2" fill="currentColor"/></svg>
           </button>
           <!-- Lock -->
-          <button v-if="!isLibraryLocked && !isKeylessModeActive" @click="handleLockLibrary"
-            class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-secondary);">
+          <button
+v-if="!isLibraryLocked && !isKeylessModeActive" class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
+            style="color: var(--text-secondary);" @click="handleLockLibrary">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2.5" y="6.5" width="9" height="6" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </button>
           <!-- Settings -->
-          <button @click="openSettings" class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-secondary);">
+          <button class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-secondary);" @click="openSettings">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M2.6 11.4l1.1-1.1M10.3 3.7l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </button>
         </div>
@@ -268,15 +255,15 @@
       <Teleport to="body">
         <div v-if="showImportMenu" class="fixed inset-0 z-[140]" @click="showImportMenu = false">
           <div class="absolute z-[150] py-1 rounded-xl overflow-hidden anim-pop-in" style="top: 100px; left: 16px; background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-lg); min-width: 150px;">
-            <button @click="showImportMenu = false; fileInputRef?.click()" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);">
+            <button class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);" @click="showImportMenu = false; fileInputRef?.click()">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="color: var(--text-muted);"><path d="M4 1h6l3 3v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2"/></svg>
               {{ t.importFiles }}
             </button>
-            <button @click="showImportMenu = false; folderInputRef?.click()" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);">
+            <button class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);" @click="showImportMenu = false; folderInputRef?.click()">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="color: var(--text-muted);"><path d="M1.5 3.5V11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H7l-1.5-1.5H2.5a1 1 0 0 0-1 1z" stroke="currentColor" stroke-width="1.2"/></svg>
               {{ t.importFolder }}
             </button>
-            <button @click="showImportMenu = false; zipInputRef?.click()" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);">
+            <button class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);" @click="showImportMenu = false; zipInputRef?.click()">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="color: var(--text-muted);"><path d="M4 1h6l3 3v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2"/><path d="M6 4h2v1H6V4zm0 2h2v1H6V6zm0 2h2v2H6V8z" fill="currentColor" opacity="0.4"/></svg>
               {{ t.importZip }}
             </button>
@@ -318,7 +305,7 @@
                 <span class="shrink-0" style="color: var(--text-muted);">{{ importReasonText(r.reason) }}</span>
               </div>
             </div>
-            <button @click="showImportResults = false" class="w-full py-2 rounded-xl text-sm font-semibold transition-all" style="background: var(--accent); color: white;">OK</button>
+            <button class="w-full py-2 rounded-xl text-sm font-semibold transition-all" style="background: var(--accent); color: white;" @click="showImportResults = false">OK</button>
           </div>
         </div>
       </Teleport>
@@ -326,22 +313,23 @@
       <!-- Note context menu (⋯ dropdown) -->
       <Teleport to="body">
         <div v-if="noteMenuKey" class="fixed inset-0 z-[140]" @click="closeNoteMenu">
-          <div class="absolute z-[150] py-1 rounded-xl overflow-hidden anim-pop-in"
+          <div
+class="absolute z-[150] py-1 rounded-xl overflow-hidden anim-pop-in"
             :style="{ top: noteMenuPos.top + 'px', left: noteMenuPos.left + 'px', background: 'var(--bg-editor)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)', minWidth: '150px' }">
-            <button @click.stop="noteMenuAction(k => togglePin(k))" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);">
+            <button class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);" @click.stop="noteMenuAction(k => togglePin(k))">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="color: var(--text-muted);"><path d="M9.828 2.172a1.5 1.5 0 0 1 2.121 0l1.879 1.879a1.5 1.5 0 0 1 0 2.121L11 9l-.5 3.5L7 9l-3.5.5L6.5 5l-2.828-2.828z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 12.5L7 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
               {{ structure.pinned?.includes(noteMenuKey!) ? t.unpinNote : t.pinNote }}
             </button>
-            <button @click.stop="noteMenuAction(k => openTagEdit(k, noteTags[k] || []))" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);">
+            <button class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);" @click.stop="noteMenuAction(k => openTagEdit(k, noteTags[k] || []))">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="color: var(--text-muted);"><path d="M1.5 1.5h4.2l4.8 4.8-4.2 4.2L1.5 5.7V1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.8" fill="currentColor"/></svg>
               {{ t.tagEdit }}
             </button>
-            <button @click.stop="noteMenuAction(k => createSubNote(k))" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);">
+            <button class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--text-secondary);" @click.stop="noteMenuAction(k => createSubNote(k))">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="color: var(--text-muted);"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               {{ t.createSubNote }}
             </button>
             <div style="border-top: 1px solid var(--border); margin: 2px 8px;"></div>
-            <button data-testid="note-delete-btn" @click.stop="noteMenuAction(k => confirmDeleteNote(k))" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--color-danger);">
+            <button data-testid="note-delete-btn" class="note-menu-item flex items-center gap-3 w-full px-3 py-2 ts-sm text-left transition-colors" style="color: var(--color-danger);" @click.stop="noteMenuAction(k => confirmDeleteNote(k))">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="color: var(--color-danger);"><path d="M2.5 3.5h9M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               {{ t.delete }}
             </button>
@@ -352,30 +340,35 @@
       <!-- Mobile more menu (history + export) -->
       <Teleport to="body">
         <div v-if="showMobileMore" class="fixed inset-0 z-[90]" @click="showMobileMore = false">
-          <div class="absolute right-3 top-14 rounded-xl overflow-hidden anim-pop-in"
+          <div
+class="absolute right-3 top-14 rounded-xl overflow-hidden anim-pop-in"
             style="background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-lg); min-width: 160px;">
-            <button @click.stop="editorRef?.toggleHistory(); showMobileMore = false"
-              class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
-              style="color: var(--text-secondary);">
+            <button
+class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
+              style="color: var(--text-secondary);"
+              @click.stop="editorRef?.toggleHistory(); showMobileMore = false">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3.5l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
               {{ t.historyBtn }}
             </button>
             <div style="border-top: 1px solid var(--border);">
-              <button @click.stop="editorRef?.exportHTML(); showMobileMore = false"
-                class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
-                style="color: var(--text-secondary);">
+              <button
+class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
+                style="color: var(--text-secondary);"
+                @click.stop="editorRef?.exportHTML(); showMobileMore = false">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v2h10v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 {{ t.exportHTML }}
               </button>
-              <button @click.stop="editorRef?.exportPDF(); showMobileMore = false"
-                class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
-                style="color: var(--text-secondary); border-top: 1px solid var(--border);">
+              <button
+class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
+                style="color: var(--text-secondary); border-top: 1px solid var(--border);"
+                @click.stop="editorRef?.exportPDF(); showMobileMore = false">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v2h10v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 {{ t.exportPDF }}
               </button>
-              <button @click.stop="editorRef?.exportMarkdown(); showMobileMore = false"
-                class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
-                style="color: var(--text-secondary); border-top: 1px solid var(--border);">
+              <button
+class="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-all active:opacity-70"
+                style="color: var(--text-secondary); border-top: 1px solid var(--border);"
+                @click.stop="editorRef?.exportMarkdown(); showMobileMore = false">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4 7l2 2 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 {{ t.exportMarkdown }}
               </button>
@@ -386,27 +379,29 @@
 
       <div class="flex-1 overflow-hidden flex flex-col">
         <!-- Tab bar — desktop only, above editor -->
-        <TabBar v-if="!isLibraryLocked && !isSearchResultsVisible"
-          :tabs="openTabs" :currentNote="currentNote" :titles="noteTitles" :previewTab="previewTab"
+        <TabBar
+v-if="!isLibraryLocked && !isSearchResultsVisible"
+          :tabs="openTabs" :current-note="currentNote" :titles="noteTitles" :preview-tab="previewTab"
           @select="selectNote" @close="closeTab" @pin="pinPreviewTab" @reorder="reorderTabs"
         />
 
         <!-- Search results panel — replaces editor while a search query is active -->
-        <SearchResults v-if="isSearchResultsVisible"
+        <SearchResults
+v-if="isSearchResultsVisible"
           :query="debouncedSearch"
-          :contentIndex="contentIndex"
-          :noteTitles="noteTitles"
+          :content-index="contentIndex"
+          :note-titles="noteTitles"
           :t="t"
           @open-note="openFromSearchResult"
         />
 
-        <Editor v-else-if="currentNote && !isLibraryLocked" :key="currentNote + (searchHighlight || '')" ref="editorRef" :noteFileName="currentNote" :isDark="isDark" :searchHighlight="searchHighlight" :searchOffset="searchOffset" :commitLabels="structure.commitLabels || {}" @title-changed="onTitleChanged" @open-settings="openSettings" @set-label="setCommitLabel" />
+        <Editor v-else-if="currentNote && !isLibraryLocked" :key="currentNote + (searchHighlight || '')" ref="editorRef" :note-file-name="currentNote" :is-dark="isDark" :search-highlight="searchHighlight" :search-offset="searchOffset" :commit-labels="structure.commitLabels || {}" @title-changed="onTitleChanged" @open-settings="openSettings" @set-label="setCommitLabel" />
 
         <!-- Empty state -->
         <div v-else-if="!currentNote" class="h-full flex flex-col" style="background: var(--bg-editor);">
           <!-- Toolbar row — desktop only, matches Editor.vue header style -->
           <div class="hidden md:flex items-center justify-end px-4 py-2 shrink-0" style="border-bottom: 1px solid var(--border);">
-            <button data-testid="empty-state-settings-btn" @click="openSettings" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.settings">
+            <button data-testid="empty-state-settings-btn" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.settings" @click="openSettings">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M2.6 11.4l1.1-1.1M10.3 3.7l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             </button>
           </div>
@@ -415,7 +410,7 @@
               <svg width="36" height="36" viewBox="0 0 18 18" fill="none"><path d="M9 2C9 2 3.5 7.5 3.5 11a5.5 5.5 0 0 0 11 0C14.5 7.5 9 2 9 2z" fill="currentColor" opacity="0.85"/><ellipse cx="11" cy="10" rx="1.5" ry="2" fill="white" opacity="0.3"/></svg>
             </div>
             <p class="text-sm font-medium" style="color: var(--text-muted);">{{ t.notSelected }}</p>
-            <button data-testid="empty-state-new-note-btn" @click="createNewNote" class="px-5 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.97]" style="background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3);">{{ t.newNote }}</button>
+            <button data-testid="empty-state-new-note-btn" class="px-5 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.97]" style="background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3);" @click="createNewNote">{{ t.newNote }}</button>
           </div>
         </div>
 
@@ -423,7 +418,7 @@
         <div v-else-if="isLibraryLocked" class="h-full flex flex-col" style="background: var(--bg-editor);">
           <!-- Toolbar row — desktop only, matches Editor.vue header style -->
           <div class="hidden md:flex items-center justify-end px-4 py-2 shrink-0" style="border-bottom: 1px solid var(--border);">
-            <button @click="openSettings" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.settings">
+            <button class="w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]" style="color: var(--text-muted);" :title="t.settings" @click="openSettings">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M2.6 11.4l1.1-1.1M10.3 3.7l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             </button>
           </div>
@@ -432,7 +427,7 @@
               <svg width="28" height="28" viewBox="0 0 14 14" fill="none"><rect x="2.5" y="6.5" width="9" height="6" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             </div>
             <p class="font-semibold text-sm" style="color: var(--text-secondary);">{{ t.libLocked }}</p>
-            <button @click="showUnlockModal = true" class="px-6 py-3 rounded-xl font-semibold text-sm transition-all active:scale-[0.97]" style="background: var(--accent); color: white; box-shadow: 0 4px 16px rgba(79,70,229,0.35);">{{ t.libUnlockBtn }}</button>
+            <button class="px-6 py-3 rounded-xl font-semibold text-sm transition-all active:scale-[0.97]" style="background: var(--accent); color: white; box-shadow: 0 4px 16px rgba(79,70,229,0.35);" @click="showUnlockModal = true">{{ t.libUnlockBtn }}</button>
           </div>
         </div>
       </div>
@@ -458,26 +453,26 @@
         ref="settingsPanelRef"
         v-model="showSettings"
         :t="t"
-        :draftSettings="draftSettings"
-        :batchProcessing="batchProcessing"
-        :showSettingsCloseConfirm="showSettingsCloseConfirm"
-        :exportKeyStatus="exportKeyStatus"
-        :exportedKeyText="exportedKeyText"
-        :batchResultMsg="batchResultMsg"
-        :settingsSaveError="settingsSaveError"
-        :resetIsHardware="resetIsHardware"
-        :isKeylessModeActive="isKeylessModeActive"
-        :settingsTab="settingsTab"
-        :mcpTokenValue="mcpTokenValue"
-        :mcpTokenSet="mcpTokenSet"
-        :mcpTokenLoading="mcpTokenLoading"
-        :mcpTokenError="mcpTokenError"
-        :mcpCaFingerprint="mcpCaFingerprint"
-        :mcpCaExpiry="mcpCaExpiry"
-        :webdavTokenValue="webdavTokenValue"
-        :webdavTokenSet="webdavTokenSet"
-        :webdavTokenLoading="webdavTokenLoading"
-        :webdavTokenError="webdavTokenError"
+        :draft-settings="draftSettings"
+        :batch-processing="batchProcessing"
+        :show-settings-close-confirm="showSettingsCloseConfirm"
+        :export-key-status="exportKeyStatus"
+        :exported-key-text="exportedKeyText"
+        :batch-result-msg="batchResultMsg"
+        :settings-save-error="settingsSaveError"
+        :reset-is-hardware="resetIsHardware"
+        :is-keyless-mode-active="isKeylessModeActive"
+        :settings-tab="settingsTab"
+        :mcp-token-value="mcpTokenValue"
+        :mcp-token-set="mcpTokenSet"
+        :mcp-token-loading="mcpTokenLoading"
+        :mcp-token-error="mcpTokenError"
+        :mcp-ca-fingerprint="mcpCaFingerprint"
+        :mcp-ca-expiry="mcpCaExpiry"
+        :webdav-token-value="webdavTokenValue"
+        :webdav-token-set="webdavTokenSet"
+        :webdav-token-loading="webdavTokenLoading"
+        :webdav-token-error="webdavTokenError"
         @close="closeSettings"
         @apply="applySettings(true)"
         @force-close="showSettings = false; showSettingsCloseConfirm = false; mcpTokenValue = ''; webdavTokenValue = ''"
@@ -488,9 +483,9 @@
         @mcp-revoke-token="handleMCPRevokeToken"
         @webdav-generate-token="handleWebDAVGenerateToken"
         @webdav-revoke-token="handleWebDAVRevokeToken"
-        @update:draftSettings="v => Object.assign(draftSettings, v)"
-        @update:showSettingsCloseConfirm="v => showSettingsCloseConfirm = v"
-        @update:settingsTab="v => settingsTab = v as 'appearance' | 'editor' | 'security' | 'ai'"
+        @update:draft-settings="v => Object.assign(draftSettings, v)"
+        @update:show-settings-close-confirm="v => showSettingsCloseConfirm = v"
+        @update:settings-tab="v => settingsTab = v as 'appearance' | 'editor' | 'security' | 'ai'"
       />
 
       <!-- Command palette (Cmd+K / Ctrl+K) — hidden when library is locked -->
@@ -498,8 +493,8 @@
         v-if="!isLibraryLocked"
         v-model="showCommandPalette"
         :titles="noteTitles"
-        :noteKeys="structure.order || []"
-        :recentNotes="recentNoteKeys"
+        :note-keys="structure.order || []"
+        :recent-notes="recentNoteKeys"
         :t="t"
         @select-note="selectNote"
         @new-note="createNewNote"
@@ -512,22 +507,22 @@
       <!-- Unlock modal -->
       <UnlockModal
         v-model="showUnlockModal"
-        :isDark="isDark"
-        :hasLibraryKey="hasLibraryKey"
-        :hasServerNotes="hasServerNotes"
-        :unlockMode="unlockMode"
-        :unlockPassword="unlockPassword"
-        :importKeyText="importKeyText"
-        :isUnlocking="isUnlocking"
-        :unlockError="unlockError"
-        :unlockErrorMsg="unlockErrorMsg"
-        :showPassword="showPassword"
+        :is-dark="isDark"
+        :has-library-key="hasLibraryKey"
+        :has-server-notes="hasServerNotes"
+        :unlock-mode="unlockMode"
+        :unlock-password="unlockPassword"
+        :import-key-text="importKeyText"
+        :is-unlocking="isUnlocking"
+        :unlock-error="unlockError"
+        :unlock-error-msg="unlockErrorMsg"
+        :show-password="showPassword"
         :t="t"
         @unlock="handleUnlock"
-        @update:unlockMode="v => unlockMode = v as typeof unlockMode"
-        @update:unlockPassword="v => unlockPassword = v"
-        @update:importKeyText="v => importKeyText = v"
-        @update:showPassword="v => showPassword = v"
+        @update:unlock-mode="v => unlockMode = v as typeof unlockMode"
+        @update:unlock-password="v => unlockPassword = v"
+        @update:import-key-text="v => importKeyText = v"
+        @update:show-password="v => showPassword = v"
       />
 
       <!-- Delete note confirmation modal -->
@@ -540,8 +535,8 @@
                 <p class="ts-sm leading-relaxed" style="color: var(--text-muted);">{{ deleteModalBodyText }}</p>
               </div>
               <div class="px-6 pb-6 flex gap-3">
-                <button data-testid="delete-cancel-btn" @click="cancelDelete" class="flex-1 py-2 rounded-xl text-sm font-semibold transition-all" style="background: var(--bg-hover); color: var(--text-secondary);">{{ t.libResetModalCancel }}</button>
-                <button data-testid="delete-confirm-btn" @click="executeDelete" class="flex-1 py-2 rounded-xl text-sm font-bold transition-all" style="background: var(--color-danger); color: white;">{{ t.delete }}</button>
+                <button data-testid="delete-cancel-btn" class="flex-1 py-2 rounded-xl text-sm font-semibold transition-all" style="background: var(--bg-hover); color: var(--text-secondary);" @click="cancelDelete">{{ t.libResetModalCancel }}</button>
+                <button data-testid="delete-confirm-btn" class="flex-1 py-2 rounded-xl text-sm font-bold transition-all" style="background: var(--color-danger); color: white;" @click="executeDelete">{{ t.delete }}</button>
               </div>
             </div>
           </div>
@@ -553,18 +548,18 @@
         v-model="showResetModal"
         :lang="lang"
         :t="t"
-        :resetCountdownTotal="config.resetCountdownSeconds"
-        :isKeylessModeActive="isKeylessModeActive"
-        :resetIsHardware="resetIsHardware"
-        :resetCountdown="resetCountdown"
-        :resetExecuting="resetExecuting"
-        :resetError="resetError"
-        :resetPassword="resetPassword"
-        :showResetPassword="showResetPassword"
+        :reset-countdown-total="config.resetCountdownSeconds"
+        :is-keyless-mode-active="isKeylessModeActive"
+        :reset-is-hardware="resetIsHardware"
+        :reset-countdown="resetCountdown"
+        :reset-executing="resetExecuting"
+        :reset-error="resetError"
+        :reset-password="resetPassword"
+        :show-reset-password="showResetPassword"
         @close="closeResetModal"
         @confirm="handleResetLibrary"
-        @update:resetPassword="v => resetPassword = v"
-        @update:showResetPassword="v => showResetPassword = v"
+        @update:reset-password="v => resetPassword = v"
+        @update:show-reset-password="v => showResetPassword = v"
       />
 
       <!-- Notes list load failure notification -->
@@ -1039,7 +1034,7 @@ const deleteAllServerData = async () => {
   const notes: { name: string }[] = (await axios.get(`${API_BASE}/notes`)).data.notes || []
   await Promise.all(notes.map(n => axios.delete(`${API_BASE}/notes/${n.name}`).catch(() => {})))
   let assets: string[] = []
-  try { assets = (await axios.get(`${API_BASE}/assets`)).data.assets || [] } catch (_) {}
+  try { assets = (await axios.get(`${API_BASE}/assets`)).data.assets || [] } catch (_) { /* assets endpoint may not exist */ }
   await Promise.all(assets.map((a: string) => axios.delete(`${API_BASE}/uploads/${a}`).catch(() => {})))
   // Structure integrity check: empty order is only rejected when notes exist on disk.
   // After deleting all notes, this PUT succeeds.
@@ -1107,7 +1102,7 @@ const handleResetLibrary = async () => {
     await crypto.resetLibrary()
     await clearIndexCache().catch(() => {})
     location.reload()
-  } catch (e) { resetError.value = true; resetExecuting.value = false }
+  } catch (_e) { resetError.value = true; resetExecuting.value = false }
 }
 
 // Batch
@@ -1610,7 +1605,7 @@ onMounted(async () => {
               hasLibraryKey.value = true   // show UNLOCK UI, not INIT wizard
             }
           }
-        } catch {}
+        } catch (_) { /* crypto restoration failure is non-fatal — show unlock UI */ }
         showUnlockModal.value = true
       }
     } catch(e) {

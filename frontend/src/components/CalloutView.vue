@@ -1,5 +1,5 @@
 <template>
-  <node-view-wrapper class="callout-wrapper">
+  <NodeViewWrapper class="callout-wrapper">
     <div
       class="callout-block"
       :data-callout-type="calloutType"
@@ -11,15 +11,15 @@
         <div class="callout-emoji-wrap relative">
           <button
             class="callout-emoji-btn"
-            @click.stop="showEmojiPicker = !showEmojiPicker"
             :title="'Change emoji'"
+            @click.stop="showEmojiPicker = !showEmojiPicker"
           >{{ displayEmoji }}</button>
           <!-- Inline emoji quick-picker -->
           <div v-if="showEmojiPicker" class="callout-emoji-picker" @click.stop>
             <button
               v-for="e in COMMON_EMOJIS" :key="e"
-              @click.stop="setEmoji(e)"
               class="callout-emoji-opt"
+              @click.stop="setEmoji(e)"
             >{{ e }}</button>
           </div>
         </div>
@@ -35,9 +35,9 @@
         </div>
       </div>
       <!-- Content (editable via Tiptap) -->
-      <node-view-content class="callout-content" />
+      <NodeViewContent class="callout-content" />
     </div>
-  </node-view-wrapper>
+  </NodeViewWrapper>
 </template>
 
 <script setup lang="ts">

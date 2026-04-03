@@ -1,13 +1,13 @@
 <template>
-  <node-view-wrapper class="toggle-wrapper">
+  <NodeViewWrapper class="toggle-wrapper">
     <div class="toggle-block" :class="{ 'toggle-closed': !isOpen }">
       <!-- Toggle header: arrow + editable title -->
       <div class="toggle-header" contenteditable="false">
         <button
           class="toggle-arrow"
-          @click.stop="toggleOpen"
           :title="isOpen ? 'Collapse' : 'Expand'"
           :aria-expanded="isOpen"
+          @click.stop="toggleOpen"
         >
           <svg
             width="12" height="12" viewBox="0 0 12 12" fill="none"
@@ -30,10 +30,10 @@
       </div>
       <!-- Collapsible content -->
       <div v-show="isOpen" class="toggle-content">
-        <node-view-content />
+        <NodeViewContent />
       </div>
     </div>
-  </node-view-wrapper>
+  </NodeViewWrapper>
 </template>
 
 <script setup lang="ts">

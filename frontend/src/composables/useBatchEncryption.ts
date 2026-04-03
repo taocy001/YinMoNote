@@ -40,7 +40,7 @@ export function useBatchEncryption(
     try {
       const notes: { name: string }[] = (await axios.get(`${API_BASE}/notes`)).data.notes || []
       let assets: string[] = []
-      try { assets = (await axios.get(`${API_BASE}/assets`)).data.assets || [] } catch (_) {}
+      try { assets = (await axios.get(`${API_BASE}/assets`)).data.assets || [] } catch (_) { /* assets endpoint may not exist */ }
 
       const total = Math.max(notes.length + assets.length, 1); let processed = 0
 

@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="cmd-palette">
-      <div v-if="modelValue" class="fixed inset-0 z-[500] flex items-start justify-center pt-[15vh]" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" @click.self="emit('update:modelValue', false)" role="presentation">
+      <div v-if="modelValue" class="fixed inset-0 z-[500] flex items-start justify-center pt-[15vh]" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" @click.self="emit('update:modelValue', false)">
         <div class="w-full max-w-lg rounded-2xl overflow-hidden anim-pop-in" role="dialog" aria-modal="true" aria-label="Command palette" style="background: var(--bg-editor); border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
           <!-- Search input -->
           <div class="flex items-center gap-3 px-4 py-3" style="border-bottom: 1px solid var(--border);">
@@ -31,8 +31,9 @@
           <div id="cmd-palette-list" ref="listRef" class="max-h-[320px] overflow-y-auto py-1" role="listbox" style="scrollbar-width: thin; scrollbar-color: var(--border) transparent;">
             <!-- Section: Commands (when query starts with >) -->
             <template v-if="isCommandMode">
-              <div v-for="(cmd, idx) in filteredCommands" :key="cmd.id"
-                :id="`cmd-palette-item-${idx}`"
+              <div
+v-for="(cmd, idx) in filteredCommands" :id="`cmd-palette-item-${idx}`"
+                :key="cmd.id"
                 class="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-micro"
                 role="option"
                 :aria-selected="idx === selectedIdx"
@@ -52,8 +53,9 @@
                 <span class="ts-xs font-semibold uppercase tracking-wider" style="color: var(--text-muted);">{{ t.cmdPaletteRecent }}</span>
               </div>
 
-              <div v-for="(item, idx) in displayItems" :key="item.key"
-                :id="`cmd-palette-item-${idx}`"
+              <div
+v-for="(item, idx) in displayItems" :id="`cmd-palette-item-${idx}`"
+                :key="item.key"
                 class="flex items-center gap-3 px-4 py-2 cursor-pointer transition-micro"
                 role="option"
                 :aria-selected="idx === selectedIdx"

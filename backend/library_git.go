@@ -188,7 +188,7 @@ func (l *NoteLibrary) StartGitGC() {
 		cmd := exec.Command("git", "gc", "--auto", "--quiet")
 		cmd.Dir = l.DataDir
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "[YinMo] git gc failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "YinMo: git gc failed: %v\n", err)
 		}
 	}
 }

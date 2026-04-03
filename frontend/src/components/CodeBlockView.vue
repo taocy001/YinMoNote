@@ -1,15 +1,16 @@
 <template>
-  <node-view-wrapper
+  <NodeViewWrapper
     :class="['code-block not-prose rounded-xl overflow-hidden border my-4',
              isDark ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200']">
     <!-- Header bar -->
-    <div :class="['flex items-center justify-between px-3 py-1.5 border-b text-xs',
+    <div
+:class="['flex items-center justify-between px-3 py-1.5 border-b text-xs',
                   isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200']">
       <select
         :value="node.attrs.language || ''"
-        @change="setLanguage"
         :class="['bg-transparent outline-none cursor-pointer font-mono',
                  isDark ? 'text-gray-400' : 'text-gray-500']"
+        @change="setLanguage"
       >
         <option value="">{{ t.codeAutoDetect }}</option>
         <option v-for="lang in LANGUAGES" :key="lang" :value="lang">{{ lang }}</option>
@@ -18,18 +19,18 @@
         <!-- Toggle code/diagram for mermaid -->
         <button
           v-if="language === 'mermaid'"
-          @click="showMermaidCode = !showMermaidCode"
           :class="['px-2 py-0.5 rounded transition-colors',
                    isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600']"
+          @click="showMermaidCode = !showMermaidCode"
         >
           {{ showMermaidCode ? t.codePreview : t.codeSource }}
         </button>
         <button
-          @click="copyCode"
           :class="['px-2 py-0.5 rounded transition-colors',
                    copied
                      ? (isDark ? 'text-green-400' : 'text-green-600')
                      : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')]"
+          @click="copyCode"
         >
           {{ copied ? t.codeCopied : t.codeCopy }}
         </button>
@@ -61,8 +62,8 @@
       v-show="language !== 'mermaid' || showMermaidCode"
       :class="['!m-0 !rounded-none !border-0 p-4 overflow-x-auto text-sm leading-relaxed',
                isDark ? '!text-gray-300 !bg-[#1e293b]/50' : '!text-gray-800 !bg-transparent']"
-    ><node-view-content as="code" :class="`language-${language || 'plaintext'}`" /></pre>
-  </node-view-wrapper>
+    ><NodeViewContent as="code" :class="`language-${language || 'plaintext'}`" /></pre>
+  </NodeViewWrapper>
 </template>
 
 <script setup lang="ts">
@@ -110,7 +111,7 @@ const copyCode = async () => {
     await navigator.clipboard.writeText(props.node.textContent)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
-  } catch {}
+  } catch (_) { /* clipboard write failure is non-fatal */ }
 }
 
 // ── KaTeX block math ──────────────────────────────────────────────────────────

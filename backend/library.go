@@ -122,15 +122,15 @@ func (l *NoteLibrary) CheckNoteQuota(n string, s int64) error {
 	maxTotalNotes := l.Config.MaxTotalNotes
 	l.mu.Unlock()
 	if s > maxNoteSize {
-		return fmt.Errorf("limit_note_size")
+		return ErrLimitNoteSize
 	}
 	if _, err := os.Stat(l.FullPath(n)); os.IsNotExist(err) {
 		notes, listErr := l.ListNotes()
 		if listErr != nil {
-			return fmt.Errorf("quota_check_failed")
+			return ErrQuotaCheckFailed
 		}
 		if len(notes) >= maxTotalNotes {
-			return fmt.Errorf("limit_total_notes")
+			return ErrLimitTotalNotes
 		}
 	}
 	return nil
@@ -146,11 +146,11 @@ func (l *NoteLibrary) CheckAssetQuota(s int64) error {
 	maxTotalAssets := l.Config.MaxTotalAssets
 	l.mu.Unlock()
 	if s > maxAssetSize {
-		return fmt.Errorf("limit_asset_size")
+		return ErrLimitAssetSize
 	}
 	entries, err := os.ReadDir(filepath.Join(l.DataDir, l.AssetsDir))
 	if err != nil {
-		return fmt.Errorf("quota_check_failed")
+		return ErrQuotaCheckFailed
 	}
 	count := 0
 	for _, e := range entries {
@@ -162,7 +162,7 @@ func (l *NoteLibrary) CheckAssetQuota(s int64) error {
 		}
 	}
 	if count >= maxTotalAssets {
-		return fmt.Errorf("limit_total_assets")
+		return ErrLimitTotalAssets
 	}
 	return nil
 }
@@ -278,51 +278,64 @@ func (l *NoteLibrary) DeleteAsset(n string) error {
 	if err := os.Remove(filepath.Join(l.DataDir, rel)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	l.mu.Lock()
-	delete(l.pendingCommits, rel)
-	l.mu.Unlock()
+	// Mark the deletion as pending so the auto-committer can stage the removal
+	// even if the synchronous git commit below fails (it acts as a safety net).
+	l.markPending(rel)
 	l.gitMu.Lock()
 	defer l.gitMu.Unlock()
 	wt, err := l.repo.Worktree()
 	if err != nil {
-		return nil // git unavailable; disk delete succeeded — acceptable
+		return nil // git unavailable; disk delete succeeded — auto-committer will retry
 	}
 	if _, err := wt.Remove(filepath.ToSlash(rel)); err != nil {
-		// File was never committed to git (still pending) — nothing to remove from index.
+		// File was never committed to git (still pending) — auto-committer will handle it.
 		fmt.Fprintf(os.Stderr, "YinMo: DeleteAsset wt.Remove(%s) skipped: %v\n", rel, err)
 		return nil
 	}
 	if _, err := wt.Commit("Delete "+rel, &git.CommitOptions{Author: &object.Signature{Name: "YinMo", Email: "auto@local", When: time.Now()}}); err != nil {
 		fmt.Fprintf(os.Stderr, "YinMo: DeleteAsset commit failed: %v\n", err)
+		// The deletion is already in pendingCommits; auto-committer will retry.
+		return nil
 	}
+	// Commit succeeded — remove from pending so auto-committer does not re-stage.
+	l.mu.Lock()
+	delete(l.pendingCommits, rel)
+	l.mu.Unlock()
 	return nil
 }
 
 // DeleteNote removes the note from disk and immediately commits the removal to git.
 // Unlike SaveNote (which batches into the auto-committer), deletions are committed
 // synchronously so that the version history accurately reflects the moment of deletion.
-// Returns an error only if the disk removal fails; git errors are best-effort.
+// Returns an error only if the disk removal fails; git errors are best-effort and
+// covered by the auto-committer as a fallback.
 func (l *NoteLibrary) DeleteNote(n string) error {
 	if err := os.Remove(l.FullPath(n)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	l.mu.Lock()
-	delete(l.pendingCommits, n)
-	l.mu.Unlock()
+	// Mark as pending before attempting the synchronous commit so that a commit
+	// failure does not leave the deletion untracked by the auto-committer.
+	l.markPending(n)
 	l.gitMu.Lock()
 	defer l.gitMu.Unlock()
 	wt, err := l.repo.Worktree()
 	if err != nil {
-		return nil // git unavailable; disk delete succeeded — acceptable
+		return nil // git unavailable; disk delete succeeded — auto-committer will retry
 	}
 	if _, err := wt.Remove(filepath.ToSlash(n)); err != nil {
-		// File was never committed to git (still pending) — nothing to remove from index.
+		// File was never committed to git (still pending) — auto-committer will handle it.
 		fmt.Fprintf(os.Stderr, "YinMo: DeleteNote wt.Remove(%s) skipped: %v\n", n, err)
 		return nil
 	}
 	if _, err := wt.Commit("Delete "+n, &git.CommitOptions{Author: &object.Signature{Name: "YinMo", Email: "auto@local", When: time.Now()}}); err != nil {
 		fmt.Fprintf(os.Stderr, "YinMo: DeleteNote commit failed: %v\n", err)
+		// The deletion is already in pendingCommits; auto-committer will retry.
+		return nil
 	}
+	// Commit succeeded — remove from pending so auto-committer does not re-stage.
+	l.mu.Lock()
+	delete(l.pendingCommits, n)
+	l.mu.Unlock()
 	return nil
 }
 

@@ -23,7 +23,7 @@ func (l *NoteLibrary) CheckStructureQuota(s Structure) error {
 	var walk func(string) error
 	walk = func(id string) error {
 		if visited[id] {
-			return fmt.Errorf("limit_cycle_detected")
+			return ErrLimitCycleDetected
 		}
 		if processed[id] {
 			return nil
@@ -112,7 +112,7 @@ func (l *NoteLibrary) reconcileStructure() {
 	raw, err := os.ReadFile(structPath)
 	if err != nil {
 		// File absent — build minimal structure from disk contents.
-		l.buildMinimalStructure(actualFiles)
+		l.buildMinimalStructure(actualFiles, nil)
 		return
 	}
 	content := strings.TrimSpace(string(raw))
@@ -124,8 +124,10 @@ func (l *NoteLibrary) reconcileStructure() {
 	// 3. Parse as plain JSON Structure.
 	var st Structure
 	if err := json.Unmarshal(raw, &st); err != nil || st.Order == nil {
-		// Corrupt JSON — rebuild.
-		l.buildMinimalStructure(actualFiles)
+		// Corrupt JSON — try to salvage VaultProxies before rebuilding.
+		var partial Structure
+		_ = json.Unmarshal(raw, &partial)
+		l.buildMinimalStructure(actualFiles, partial.VaultProxies)
 		return
 	}
 
@@ -213,29 +215,32 @@ func (l *NoteLibrary) reconcileStructure() {
 		return
 	}
 	if err := l.AtomicWrite("_structure.json", d); err != nil {
-		fmt.Fprintf(os.Stderr, "[YinMo] reconcileStructure: failed to write structure: %v\n", err)
+		fmt.Fprintf(os.Stderr, "YinMo: reconcileStructure: failed to write structure: %v\n", err)
 	}
 }
 
 // buildMinimalStructure creates a _structure.json containing all known note files
 // in sorted order with no folder hierarchy. Used when the file is absent or corrupt.
-func (l *NoteLibrary) buildMinimalStructure(actualFiles map[string]bool) {
+// vaultProxies carries any previously-known vault proxy names so they are not lost
+// when the structure is rebuilt (pass nil when the file was simply absent).
+func (l *NoteLibrary) buildMinimalStructure(actualFiles map[string]bool, vaultProxies []string) {
 	names := make([]string, 0, len(actualFiles))
 	for name := range actualFiles {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	st := Structure{
-		Order:      names,
-		ChildOrder: map[string][]string{},
-		Parents:    map[string]string{},
+		Order:        names,
+		ChildOrder:   map[string][]string{},
+		Parents:      map[string]string{},
+		VaultProxies: vaultProxies,
 	}
 	d, err := json.Marshal(st)
 	if err != nil {
 		return
 	}
 	if err := l.AtomicWrite("_structure.json", d); err != nil {
-		fmt.Fprintf(os.Stderr, "[YinMo] buildMinimalStructure: failed to write structure: %v\n", err)
+		fmt.Fprintf(os.Stderr, "YinMo: buildMinimalStructure: failed to write structure: %v\n", err)
 	}
 }
 

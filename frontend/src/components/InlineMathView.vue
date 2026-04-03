@@ -1,5 +1,5 @@
 <template>
-  <node-view-wrapper as="span" class="inline align-baseline">
+  <NodeViewWrapper as="span" class="inline align-baseline">
     <span
       ref="el"
       :class="[
@@ -8,7 +8,7 @@
         error ? 'text-red-500 font-mono text-sm' : '',
       ]"
     />
-  </node-view-wrapper>
+  </NodeViewWrapper>
 </template>
 
 <script setup lang="ts">

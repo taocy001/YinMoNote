@@ -52,11 +52,12 @@
             <div v-if="!isKeylessModeActive && !resetIsHardware" class="space-y-1.5">
               <p class="ts-xs font-semibold" style="color: var(--text-muted);">{{ t.libEnterPass }}</p>
               <div class="relative">
-                <input :value="resetPassword" @input="emit('update:resetPassword', ($event.target as HTMLInputElement).value)"
-                  :type="showResetPassword ? 'text' : 'password'" placeholder=""
-                  class="password-input w-full px-4 py-2.5 pr-10 rounded-xl outline-none transition-all font-mono text-sm"
-                  style="border: 1.5px solid var(--border); background: var(--bg-app); color: var(--text-primary);" />
-                <button type="button" @click="emit('update:showResetPassword', !showResetPassword)" class="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity" :style="{ opacity: showResetPassword ? '1' : '0.4', color: 'var(--text-muted)' }" tabindex="-1">
+                <input
+:value="resetPassword" :type="showResetPassword ? 'text' : 'password'"
+                  placeholder="" class="password-input w-full px-4 py-2.5 pr-10 rounded-xl outline-none transition-all font-mono text-sm"
+                  style="border: 1.5px solid var(--border); background: var(--bg-app); color: var(--text-primary);"
+                  @input="emit('update:resetPassword', ($event.target as HTMLInputElement).value)" />
+                <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity" :style="{ opacity: showResetPassword ? '1' : '0.4', color: 'var(--text-muted)' }" tabindex="-1" @click="emit('update:showResetPassword', !showResetPassword)">
                   <svg v-if="!showResetPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 </button>
@@ -73,10 +74,10 @@
 
           <!-- Footer -->
           <div class="px-6 pb-6 flex gap-3">
-            <button @click="emit('close')" class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all" style="background: var(--bg-hover); color: var(--text-secondary);">
+            <button class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all" style="background: var(--bg-hover); color: var(--text-secondary);" @click="emit('close')">
               {{ t.libResetModalCancel }}
             </button>
-            <button @click="emit('confirm')" :disabled="resetCountdown > 0 || resetExecuting" class="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed" :style="resetCountdown === 0 && !resetExecuting ? 'background: var(--color-danger); color: white;' : 'background: var(--border); color: var(--text-muted);'">
+            <button :disabled="resetCountdown > 0 || resetExecuting" class="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed" :style="resetCountdown === 0 && !resetExecuting ? 'background: var(--color-danger); color: white;' : 'background: var(--border); color: var(--text-muted);'" @click="emit('confirm')">
               <span v-if="resetExecuting">{{ t.libResetting }}</span>
               <span v-else>{{ t.libResetModalConfirmBtn(resetCountdown) }}</span>
             </button>

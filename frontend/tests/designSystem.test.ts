@@ -4,7 +4,7 @@
  * Validates that the design system CSS variables and utility classes
  * are correctly defined and consistent across light/dark themes.
  */
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 
@@ -126,7 +126,6 @@ describe('type scale utility classes in style.css', () => {
 // ─── No non-standard font sizes remain ────────────────────────────────────────
 
 describe('font size standardization', () => {
-  const appVue = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8')
   const allVueFiles = ['App.vue', 'components/CommandPalette.vue', 'components/Editor.vue',
     'components/SettingsPanel.vue', 'components/TabBar.vue', 'components/UnlockModal.vue',
     'components/ResetModal.vue', 'components/SearchResults.vue', 'components/HistoryPanel.vue',

@@ -4,9 +4,9 @@
     role="switch"
     :aria-checked="modelValue"
     :aria-label="label"
-    @click="emit('update:modelValue', !modelValue)"
     class="w-11 h-6 rounded-full transition-colors relative shrink-0 focus-ring"
     :style="modelValue ? 'background: var(--accent);' : 'background: var(--border-strong);'"
+    @click="emit('update:modelValue', !modelValue)"
   >
     <div
       class="absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm"

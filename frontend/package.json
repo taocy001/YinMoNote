@@ -9,10 +9,15 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "eslint src tests --ext .ts,.vue",
+    "lint:fix": "eslint src tests --ext .ts,.vue --fix",
+    "format": "prettier --write \"src/**/*.{ts,vue,css}\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,vue,css}\" \"tests/**/*.ts\"",
     "deploy": "docker compose up -d --build && docker image prune -f"
   },
   "dependencies": {
     "@tiptap/extension-code-block-lowlight": "^3.20.2",
+    "@tiptap/extension-color": "^3.22.1",
     "@tiptap/extension-gapcursor": "^3.20.2",
     "@tiptap/extension-highlight": "^3.20.2",
     "@tiptap/extension-image": "^3.20.2",
@@ -25,6 +30,8 @@
     "@tiptap/extension-table-row": "^3.20.2",
     "@tiptap/extension-task-item": "^3.20.2",
     "@tiptap/extension-task-list": "^3.20.2",
+    "@tiptap/extension-text-align": "^3.22.1",
+    "@tiptap/extension-text-style": "^3.22.1",
     "@tiptap/extension-typography": "^3.20.2",
     "@tiptap/extension-underline": "^3.20.2",
     "@tiptap/starter-kit": "^3.20.2",
@@ -42,17 +49,25 @@
     "vue": "^3.5.12"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
     "@vitejs/plugin-vue": "^5.1.4",
     "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.27",
+    "eslint": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.8.0",
     "happy-dom": "^14.12.0",
     "postcss": "^8.5.8",
+    "prettier": "^3.8.1",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.6.2",
     "vite": "^5.4.10",
     "vitest": "^2.1.8",
+    "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^2.1.8"
   }
 }

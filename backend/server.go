@@ -290,8 +290,8 @@ func (s *Server) Run(port string) {
 	default:
 		// Plain HTTP — warn if binding to all network interfaces.
 		if !strings.HasPrefix(port, "127.0.0.1:") && !strings.HasPrefix(port, "[::1]:") && !strings.HasPrefix(port, "localhost:") {
-			fmt.Fprintf(os.Stderr, "WARNING: YinMo is serving plain HTTP on %s. "+
-				"Traffic is unencrypted and credentials are exposed to the network. "+
+			fmt.Fprintf(os.Stderr, "YinMo: WARNING: serving plain HTTP on %s — "+
+				"traffic is unencrypted and credentials are exposed to the network. "+
 				"Set TLS_SELF=1, TLS_CERT+TLS_KEY, or ACME_DOMAIN for production use.\n", port)
 		}
 		fmt.Printf("YinMo running on %s\n", port)
@@ -532,6 +532,19 @@ func (s *Server) handleSaveStructure(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+	// Validate vaultProxies entries: each must be a non-empty, single-segment
+	// name with no path separators, no null bytes, no leading/trailing whitespace,
+	// and within the filesystem filename length limit.
+	for _, seg := range st.VaultProxies {
+		if seg == "" ||
+			strings.ContainsRune(seg, '/') ||
+			strings.ContainsRune(seg, '\x00') ||
+			strings.TrimSpace(seg) != seg ||
+			len(seg) > 255 {
+			c.JSON(400, gin.H{"error": "invalid_vault_proxy_name"})
+			return
+		}
+	}
 	// Reject an empty-order payload when notes exist on disk that are NOT in
 	// the trash or nested under a parent. An empty order from the client almost
 	// certainly indicates a UI bug — unless every note is either trashed or a
@@ -680,7 +693,7 @@ func (s *Server) handleOverwriteAsset(c *gin.Context) {
 	maxSize := s.Library.Config.MaxAssetSize * base64OverheadFactor
 	s.Library.mu.Unlock()
 	if f.Size > maxSize {
-		c.JSON(400, gin.H{"error": "limit_asset_size"})
+		c.JSON(400, gin.H{"error": ErrLimitAssetSize.Error()})
 		return
 	}
 	file, err := f.Open()
