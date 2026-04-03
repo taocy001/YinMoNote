@@ -184,12 +184,12 @@
           @click="applyTextColor(c.value)"
         ></button>
         <button
-          class="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center text-xs font-bold"
+          class="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center"
           :style="{ borderColor: activeTextColor === null ? 'var(--accent)' : 'transparent', background: 'var(--bg-app)', color: 'var(--text-muted)' }"
           title="默认 / Default"
           @mousedown.prevent
           @click="applyTextColor(null)"
-        >✕</button>
+        ><Ban :size="10" /></button>
       </div>
       <div class="border-t mx-2" style="border-color: var(--border);"></div>
       <div class="px-3 pt-2 pb-1 text-xs font-medium" style="color: var(--text-muted);">{{ t.bgColor }}</div>
@@ -204,12 +204,12 @@
           @click="applyBgColor(c.value)"
         ></button>
         <button
-          class="w-5 h-5 rounded border-2 transition-transform hover:scale-110 flex items-center justify-center text-xs font-bold"
+          class="w-5 h-5 rounded border-2 transition-transform hover:scale-110 flex items-center justify-center"
           :style="{ borderColor: activeBgColor === null ? 'var(--accent)' : 'transparent', background: 'var(--bg-app)', color: 'var(--text-muted)' }"
           title="默认 / Default"
           @mousedown.prevent
           @click="applyBgColor(null)"
-        >✕</button>
+        ><Ban :size="10" /></button>
       </div>
     </div>
   </Teleport>
@@ -218,7 +218,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
-import { Link, ChevronDown } from 'lucide-vue-next'
+import { Link, ChevronDown, Ban } from 'lucide-vue-next'
 
 const SAFE_LINK_PROTO = /^(https?|mailto|tel):/i
 

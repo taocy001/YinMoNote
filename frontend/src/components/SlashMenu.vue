@@ -39,18 +39,18 @@
     <div
       v-if="blockMenuVisible"
       ref="blockMenuEl"
-      class="fixed z-[69] w-52 overflow-hidden rounded-xl anim-pop-in"
+      class="fixed z-[69] w-56 overflow-hidden rounded-xl anim-pop-in"
       :style="{ top: blockMenuTop + 'px', left: blockMenuLeft + 'px', background: 'var(--bg-editor)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }"
       @mouseenter="cancelCloseBlockMenu"
       @mouseleave="scheduleCloseBlockMenu"
     >
       <!-- 1. Block type grid: 2 rows × 6 icons -->
       <div class="px-2 pt-2 pb-1.5">
-        <div class="grid grid-cols-6 gap-0.5">
+        <div class="grid grid-cols-6 gap-1">
           <button
             v-for="cmd in convertCommands"
             :key="cmd.id"
-            class="h-8 flex items-center justify-center rounded text-xs font-mono transition-colors"
+            class="h-9 flex items-center justify-center rounded text-sm font-mono transition-colors"
             :style="cmd.id === currentBlockTypeId
               ? 'background: var(--accent-light); color: var(--accent); font-weight: 600;'
               : 'color: var(--text-secondary);'"
@@ -75,7 +75,12 @@
         >
           <AlignLeft :size="15" class="shrink-0" style="color: var(--text-muted);" />
           <span>{{ t.alignLabel }}</span>
-          <ChevronRight :size="14" class="ml-auto shrink-0" style="color: var(--text-muted);" />
+          <ChevronRight
+            :size="14"
+            class="ml-auto shrink-0 transition-transform duration-150"
+            :class="{ 'rotate-90': activeSubmenu === 'align' }"
+            :style="activeSubmenu === 'align' ? 'color: var(--accent);' : 'color: var(--text-muted);'"
+          />
         </div>
         <!-- 3. Color row → opens submenu -->
         <div
@@ -88,7 +93,12 @@
         >
           <Palette :size="15" class="shrink-0" style="color: var(--text-muted);" />
           <span>{{ t.colorLabel }}</span>
-          <ChevronRight :size="14" class="ml-auto shrink-0" style="color: var(--text-muted);" />
+          <ChevronRight
+            :size="14"
+            class="ml-auto shrink-0 transition-transform duration-150"
+            :class="{ 'rotate-90': activeSubmenu === 'color' }"
+            :style="activeSubmenu === 'color' ? 'color: var(--accent);' : 'color: var(--text-muted);'"
+          />
         </div>
       </div>
 
@@ -153,11 +163,11 @@
           @click="applyTextColor(c.value)"
         ></button>
         <button
-          class="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center text-xs font-bold"
+          class="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center"
           :style="{ borderColor: currentTextColor === null ? 'var(--accent)' : 'transparent', background: 'var(--bg-app)', color: 'var(--text-muted)' }"
           title="默认 / Default"
           @click="applyTextColor(null)"
-        >✕</button>
+        ><Ban :size="10" /></button>
       </div>
       <div class="border-t mx-2" style="border-color: var(--border);"></div>
       <div class="px-3 pt-2 pb-1 text-xs font-medium" style="color: var(--text-muted);">{{ t.bgColor }}</div>
@@ -171,11 +181,11 @@
           @click="applyBgColor(c.value)"
         ></button>
         <button
-          class="w-5 h-5 rounded border-2 transition-transform hover:scale-110 flex items-center justify-center text-xs font-bold"
+          class="w-5 h-5 rounded border-2 transition-transform hover:scale-110 flex items-center justify-center"
           :style="{ borderColor: currentBgColor === null ? 'var(--accent)' : 'transparent', background: 'var(--bg-app)', color: 'var(--text-muted)' }"
           title="默认 / Default"
           @click="applyBgColor(null)"
-        >✕</button>
+        ><Ban :size="10" /></button>
       </div>
     </div>
 
@@ -246,7 +256,7 @@ import type { Editor as TiptapEditor } from '@tiptap/core'
 import {
   GripVertical, Scissors, Copy, FileText, Trash2,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Palette, ChevronRight,
+  Palette, ChevronRight, Ban,
 } from 'lucide-vue-next'
 
 // SlashCommand uses icon: string (text/emoji label rendered in the command list icon box).
