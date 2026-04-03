@@ -47,7 +47,7 @@
             @mouseleave="e => { hideTooltip(); if (!typeMenuVisible) (e.currentTarget as HTMLElement).style.background='transparent' }"
           >
             <span class="font-mono font-bold text-sm" style="min-width: 18px; text-align: center;">{{ currentTypeLabel }}</span>
-            <span class="text-[10px] opacity-50 leading-none">▾</span>
+            <ChevronDown :size="11" class="opacity-50" />
           </button>
           <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
         </template>
@@ -84,7 +84,7 @@
               :style="{ background: activeTextColor ?? 'var(--text-secondary)' }"
             ></span>
           </span>
-          <span class="text-[10px] opacity-50 leading-none">▾</span>
+          <ChevronDown :size="11" class="opacity-50" style="color: var(--text-muted);" />
         </button>
 
         <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
@@ -97,7 +97,7 @@
           @click="openLinkMode"
           @mouseenter="e => { showTooltip(e, t.link); if (!props.editor?.isActive('link')) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('link')) (e.currentTarget as HTMLElement).style.background='transparent' }"
-        >🔗</button>
+        ><Link :size="15" /></button>
         <button
           class="px-3 py-2.5 text-xs font-mono transition-colors rounded-lg"
           :style="props.editor?.isActive('code') ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-secondary);'"
@@ -134,7 +134,7 @@
       v-if="tooltip && bubbleVisible"
       class="fixed z-[60] pointer-events-none px-2 py-1 text-xs rounded-md whitespace-nowrap"
       style="background: rgba(0,0,0,0.72); color: #fff; transform: translateX(-50%);"
-      :style="{ top: tooltip.y + 'px', left: tooltip.x + 'px' }"
+      :style="{ top: tooltip.y + 'px', left: tooltip.centerX + 'px' }"
     >{{ tooltip.text }}</div>
 
     <!-- ── Backdrop closes open dropdowns ─────────────────────────────────── -->
@@ -218,6 +218,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
+import { Link, ChevronDown } from 'lucide-vue-next'
 
 const SAFE_LINK_PROTO = /^(https?|mailto|tel):/i
 
@@ -227,12 +228,13 @@ const props = defineProps<{
 }>()
 
 // ── Tooltip ───────────────────────────────────────────────────────────────
-const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
+// centerX is the horizontal center of the hovered button; used with translateX(-50%) in the template.
+const tooltip = ref<{ text: string; centerX: number; y: number } | null>(null)
 
 const showTooltip = (e: MouseEvent, text: string) => {
   if (!text) return
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  tooltip.value = { text, x: rect.left + rect.width / 2, y: rect.bottom + 7 }
+  tooltip.value = { text, centerX: rect.left + rect.width / 2, y: rect.bottom + 7 }
 }
 const hideTooltip = () => { tooltip.value = null }
 

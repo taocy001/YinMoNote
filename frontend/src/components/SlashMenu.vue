@@ -18,20 +18,21 @@
         @mouseenter="onPlusMouseEnter"
         @mouseleave="onPlusMouseLeave"
       >+</button>
-      <!-- Non-empty block: [⠿] drag + block-menu handle -->
+      <!-- Non-empty block: drag + block-menu handle -->
       <!-- Hover opens block menu after a short delay; mousedown + dragstart handles drag -->
       <div
         v-else
         draggable="true"
-        class="w-6 h-6 flex items-center justify-center rounded text-xs cursor-grab transition-colors"
+        class="w-6 h-6 flex items-center justify-center rounded cursor-grab transition-colors"
         :style="{ color: 'var(--text-muted)', background: handleHovered ? 'var(--bg-hover)' : 'transparent' }"
         :title="t.dragHandle"
+        :aria-label="t.dragHandle"
         @mousedown="onHandleMousedown"
         @dragstart="onHandleDragStart"
         @dragend="onHandleDragEnd"
         @mouseenter="onHandleMouseEnter"
         @mouseleave="onHandleMouseLeave"
-      >⠿</div>
+      ><GripVertical :size="15" aria-hidden="true" /></div>
     </div>
 
     <!-- ── Block menu (hover-triggered, no backdrop) ─────────────────────── -->
@@ -55,7 +56,6 @@
               : 'color: var(--text-secondary);'"
             @click="executeConvert(cmd)"
             @mouseenter="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'; showTooltip(cmd.title, e) }"
-            @mousemove="e => moveTooltip(e)"
             @mouseleave="e => { if (cmd.id !== currentBlockTypeId) (e.currentTarget as HTMLElement).style.background='transparent'; hideTooltip() }"
           >{{ cmd.icon }}</button>
         </div>
@@ -73,9 +73,9 @@
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
           @mouseleave="e => { if (activeSubmenu !== 'align') (e.currentTarget as HTMLElement).style.background='transparent' }"
         >
-          <span class="w-4 text-center shrink-0 text-base leading-none" style="color: var(--text-muted);">≡</span>
+          <AlignLeft :size="15" class="shrink-0" style="color: var(--text-muted);" />
           <span>{{ t.alignLabel }}</span>
-          <span class="ml-auto text-xs" style="color: var(--text-muted);">›</span>
+          <ChevronRight :size="14" class="ml-auto shrink-0" style="color: var(--text-muted);" />
         </div>
         <!-- 3. Color row → opens submenu -->
         <div
@@ -86,9 +86,9 @@
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
           @mouseleave="e => { if (activeSubmenu !== 'color') (e.currentTarget as HTMLElement).style.background='transparent' }"
         >
-          <span class="w-4 text-center shrink-0" style="color: var(--text-muted); font-size: 15px;">◑</span>
+          <Palette :size="15" class="shrink-0" style="color: var(--text-muted);" />
           <span>{{ t.colorLabel }}</span>
-          <span class="ml-auto text-xs" style="color: var(--text-muted);">›</span>
+          <ChevronRight :size="14" class="ml-auto shrink-0" style="color: var(--text-muted);" />
         </div>
       </div>
 
@@ -105,7 +105,7 @@
           @mouseenter="e => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
           @mouseleave="e => (e.currentTarget as HTMLElement).style.background='transparent'"
         >
-          <span class="w-5 text-center shrink-0">{{ act.icon }}</span>
+          <component :is="act.svgIcon" :size="14" class="shrink-0" />
           <span>{{ act.title }}</span>
         </div>
       </div>
@@ -124,13 +124,13 @@
         <button
           v-for="a in alignOptions"
           :key="a.value"
-          class="flex-1 h-7 flex items-center justify-center rounded text-sm transition-colors"
+          class="flex-1 h-7 flex items-center justify-center rounded transition-colors"
           :style="currentAlign === a.value ? 'background: var(--accent-light); color: var(--accent);' : 'color: var(--text-muted);'"
           :title="a.label"
           @click="applyAlign(a.value)"
           @mouseenter="e => { if (currentAlign !== a.value) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { if (currentAlign !== a.value) (e.currentTarget as HTMLElement).style.background='transparent' }"
-        >{{ a.icon }}</button>
+        ><component :is="a.component" :size="15" /></button>
       </div>
     </div>
 
@@ -200,11 +200,12 @@
       </div>
     </div>
 
-    <!-- ── Mouse-following tooltip (block type grid) ─────────────────────── -->
+    <!-- ── Tooltip (block type grid, anchored to button center-bottom) ──────── -->
     <div
       v-if="tooltip"
-      class="fixed z-[200] pointer-events-none px-2 py-1 rounded text-xs whitespace-nowrap"
-      :style="{ top: tooltip.y + 'px', left: tooltip.x + 'px', background: 'var(--bg-app)', border: '1px solid var(--border)', color: 'var(--text-secondary)', boxShadow: 'var(--shadow-sm)' }"
+      class="fixed z-[200] pointer-events-none px-2 py-1 rounded-md text-xs whitespace-nowrap"
+      style="background: rgba(0,0,0,0.72); color: #fff; transform: translateX(-50%);"
+      :style="{ top: tooltip.y + 'px', left: tooltip.centerX + 'px' }"
     >{{ tooltip.text }}</div>
 
     <!-- ── Insert slash menu ──────────────────────────────────────────────── -->
@@ -240,8 +241,16 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
+import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
+import {
+  GripVertical, Scissors, Copy, FileText, Trash2,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Palette, ChevronRight,
+} from 'lucide-vue-next'
 
+// SlashCommand uses icon: string (text/emoji label rendered in the command list icon box).
+// ActionCommand uses svgIcon: Component (Lucide SVG rendered directly in the action row).
 interface SlashCommand {
   id: string
   title: string
@@ -252,7 +261,7 @@ interface SlashCommand {
 interface ActionCommand {
   id: string
   title: string
-  icon: string
+  svgIcon: Component
   danger?: boolean
   action: () => void
 }
@@ -368,7 +377,8 @@ const submenuTop = ref(0)
 const submenuLeft = ref(0)
 
 // Tooltip for block-type grid icons
-const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
+// centerX is the horizontal center of the hovered button; used with translateX(-50%) in the template.
+const tooltip = ref<{ text: string; centerX: number; y: number } | null>(null)
 
 // ── Block menu close timer ────────────────────────────────────────────────
 // Shared by handle, menu panel, and submenus so the mouse can travel between
@@ -431,11 +441,10 @@ const cancelCloseSlashHover = () => {
 
 // ── Tooltip helpers ───────────────────────────────────────────────────────
 
+// Tooltip anchored to button center-bottom, not mouse cursor (avoids jitter on grid).
 const showTooltip = (text: string, e: MouseEvent) => {
-  tooltip.value = { text, x: e.clientX + 14, y: e.clientY + 14 }
-}
-const moveTooltip = (e: MouseEvent) => {
-  if (tooltip.value) tooltip.value = { ...tooltip.value, x: e.clientX + 14, y: e.clientY + 14 }
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  tooltip.value = { text, centerX: rect.left + rect.width / 2, y: rect.bottom + 7 }
 }
 const hideTooltip = () => { tooltip.value = null }
 
@@ -457,10 +466,10 @@ const bgColors = [
   { value: 'rgba(107,114,128,0.15)',  label: '灰底' },
 ]
 const alignOptions = [
-  { value: 'left',    icon: '⇤', label: '左对齐' },
-  { value: 'center',  icon: '⇔', label: '居中' },
-  { value: 'right',   icon: '⇥', label: '右对齐' },
-  { value: 'justify', icon: '⇹', label: '两端' },
+  { value: 'left',    component: AlignLeft,    label: '左对齐' },
+  { value: 'center',  component: AlignCenter,  label: '居中' },
+  { value: 'right',   component: AlignRight,   label: '右对齐' },
+  { value: 'justify', component: AlignJustify, label: '两端' },
 ]
 const calloutTypes = [
   { type: 'info',    icon: '💡', label: '信息 / Info' },
@@ -513,7 +522,7 @@ const executeConvert = (cmd: { id: string; action: (ed: TiptapEditor) => void })
 // they work correctly without relying on a pre-set ProseMirror selection.
 const actionCommands = computed<ActionCommand[]>(() => [
   {
-    id: 'cut', title: props.t.blockCut, icon: '✂',
+    id: 'cut', title: props.t.blockCut, svgIcon: Scissors,
     action: async () => {
       const ed = props.editor; if (!ed) return
       const bNode = ed.state.doc.nodeAt(hoverBlockPos.value)
@@ -526,7 +535,7 @@ const actionCommands = computed<ActionCommand[]>(() => [
     },
   },
   {
-    id: 'copy', title: props.t.blockCopy, icon: '⎘',
+    id: 'copy', title: props.t.blockCopy, svgIcon: Copy,
     action: async () => {
       const ed = props.editor; if (!ed) return
       const bNode = ed.state.doc.nodeAt(hoverBlockPos.value)
@@ -537,7 +546,7 @@ const actionCommands = computed<ActionCommand[]>(() => [
     },
   },
   {
-    id: 'copyMd', title: props.t.blockCopyMd, icon: '⧉',
+    id: 'copyMd', title: props.t.blockCopyMd, svgIcon: FileText,
     action: async () => {
       const ed = props.editor; if (!ed) return
       const bNode = ed.state.doc.nodeAt(hoverBlockPos.value)
@@ -557,7 +566,7 @@ const actionCommands = computed<ActionCommand[]>(() => [
     },
   },
   {
-    id: 'delete', title: props.t.blockDelete, icon: '🗑', danger: true,
+    id: 'delete', title: props.t.blockDelete, svgIcon: Trash2, danger: true,
     action: () => {
       const ed = props.editor; if (!ed) return
       try { ed.commands.setNodeSelection(hoverBlockPos.value) } catch (_) {}
