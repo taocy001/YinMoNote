@@ -125,6 +125,44 @@
           @mouseenter="e => { showTooltip(e, t.subscript); if (!props.editor?.isActive('subscript')) (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
           @mouseleave="e => { hideTooltip(); if (!props.editor?.isActive('subscript')) (e.currentTarget as HTMLElement).style.background='transparent' }"
         ><Subscript :size="15" /></button>
+
+        <!-- Group 6: Table operations — row / column management (only when cursor is in a table) -->
+        <template v-if="isTableActive">
+          <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
+          <!-- Row buttons -->
+          <button
+            v-for="btn in tableRowButtons"
+            :key="btn.key"
+            class="px-2.5 py-2.5 transition-colors rounded-lg"
+            :style="btn.danger ? 'color: var(--color-danger);' : 'color: var(--text-secondary);'"
+            @mousedown.prevent
+            @click="btn.action()"
+            @mouseenter="e => { showTooltip(e, btn.title); (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
+            @mouseleave="e => { hideTooltip(); (e.currentTarget as HTMLElement).style.background='transparent' }"
+          ><component :is="btn.svgIcon" :size="14" /></button>
+          <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
+          <!-- Column buttons -->
+          <button
+            v-for="btn in tableColButtons"
+            :key="btn.key"
+            class="px-2.5 py-2.5 transition-colors rounded-lg"
+            :style="btn.danger ? 'color: var(--color-danger);' : 'color: var(--text-secondary);'"
+            @mousedown.prevent
+            @click="btn.action()"
+            @mouseenter="e => { showTooltip(e, btn.title); (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
+            @mouseleave="e => { hideTooltip(); (e.currentTarget as HTMLElement).style.background='transparent' }"
+          ><component :is="btn.svgIcon" :size="14" /></button>
+          <div class="w-px h-5 shrink-0 mx-0.5" style="background: var(--border);"></div>
+          <!-- Delete entire table -->
+          <button
+            class="px-2.5 py-2.5 transition-colors rounded-lg"
+            style="color: var(--color-danger);"
+            @mousedown.prevent
+            @click="props.editor?.chain().focus().deleteTable().run()"
+            @mouseenter="e => { showTooltip(e, t.tableDeleteTable); (e.currentTarget as HTMLElement).style.background='var(--bg-hover)' }"
+            @mouseleave="e => { hideTooltip(); (e.currentTarget as HTMLElement).style.background='transparent' }"
+          ><Trash2 :size="14" /></button>
+        </template>
       </template>
     </div>
 
@@ -218,7 +256,7 @@
 import { ref, computed, nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
-import { Link, ChevronDown, Ban, Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript, Pilcrow, Heading1, Heading2, Heading3, Heading4 } from 'lucide-vue-next'
+import { Link, ChevronDown, Ban, Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript, Pilcrow, Heading1, Heading2, Heading3, Heading4, ArrowUpToLine, ArrowDownToLine, ArrowLeftToLine, ArrowRightToLine, Trash2 } from 'lucide-vue-next'
 
 const SAFE_LINK_PROTO = /^(https?|mailto|tel):/i
 
@@ -304,6 +342,19 @@ const cancelLink = () => { bubbleLinkMode.value = false }
 // ── Block-type detection (refs, updated in updateBubble) ──────────────────
 const currentTypeId  = ref('text')
 const isSpecialBlock = ref(false)
+const isTableActive  = ref(false)
+
+// ── Table operation buttons ───────────────────────────────────────────────
+const tableRowButtons = computed<{ key: string; svgIcon: Component; title: string; danger?: boolean; action: () => void }[]>(() => [
+  { key: 'row-above', svgIcon: ArrowUpToLine,   title: props.t.tableInsertRowAbove, action: () => props.editor?.chain().focus().addRowBefore().run() },
+  { key: 'row-below', svgIcon: ArrowDownToLine, title: props.t.tableInsertRowBelow, action: () => props.editor?.chain().focus().addRowAfter().run() },
+  { key: 'row-del',   svgIcon: Trash2,          title: props.t.tableDeleteRow,      danger: true, action: () => props.editor?.chain().focus().deleteRow().run() },
+])
+const tableColButtons = computed<{ key: string; svgIcon: Component; title: string; danger?: boolean; action: () => void }[]>(() => [
+  { key: 'col-left',  svgIcon: ArrowLeftToLine,  title: props.t.tableInsertColLeft,  action: () => props.editor?.chain().focus().addColumnBefore().run() },
+  { key: 'col-right', svgIcon: ArrowRightToLine, title: props.t.tableInsertColRight, action: () => props.editor?.chain().focus().addColumnAfter().run() },
+  { key: 'col-del',   svgIcon: Trash2,           title: props.t.tableDeleteCol,      danger: true, action: () => props.editor?.chain().focus().deleteColumn().run() },
+])
 
 const typeOptions = computed(() => [
   { id: 'text', icon: 'T',  svgIcon: Pilcrow,   label: props.t.cmdText ?? '正文',    action: () => props.editor?.chain().focus().setParagraph().run() },
@@ -360,7 +411,11 @@ const applyBgColor = (color: string | null) => {
 // ── Position & visibility (called from Editor.vue on every update) ────────
 const updateBubble = (ed: TiptapEditor) => {
   const { selection } = ed.state
-  if (selection.empty) {
+  const inTable = ed.isActive('table')
+  isTableActive.value = inTable
+
+  // Hide toolbar when cursor is not in a table and nothing is selected
+  if (selection.empty && !inTable) {
     bubbleVisible.value = false
     closeAllDropdowns()
     bubbleLinkMode.value = false
@@ -374,7 +429,8 @@ const updateBubble = (ed: TiptapEditor) => {
   else if (ed.isActive('heading', { level: 4 })) currentTypeId.value = 'h4'
   else                                            currentTypeId.value = 'text'
 
-  isSpecialBlock.value = ed.isActive('codeBlock') || ed.isActive('callout') || ed.isActive('toggleBlock')
+  // In a table cell the block-type button is meaningless (always paragraph); hide it
+  isSpecialBlock.value = ed.isActive('codeBlock') || ed.isActive('callout') || ed.isActive('toggleBlock') || inTable
 
   activeTextColor.value = ed.getAttributes('textStyle').color ?? null
   activeBgColor.value   = ed.getAttributes('highlight').color ?? null

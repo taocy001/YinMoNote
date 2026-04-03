@@ -203,6 +203,14 @@ const zh = {
   blockType: '块类型',
   superscript: '上标',
   subscript: '下标',
+  // Table toolbar
+  tableInsertRowAbove: '在上方插入行',
+  tableInsertRowBelow: '在下方插入行',
+  tableDeleteRow: '删除行',
+  tableInsertColLeft: '在左侧插入列',
+  tableInsertColRight: '在右侧插入列',
+  tableDeleteCol: '删除列',
+  tableDeleteTable: '删除表格',
   // Note actions
   rename: '重命名',
   delete: '删除',
@@ -589,6 +597,14 @@ const en = {
   blockType: 'Block type',
   superscript: 'Superscript',
   subscript: 'Subscript',
+  // Table toolbar
+  tableInsertRowAbove: 'Insert row above',
+  tableInsertRowBelow: 'Insert row below',
+  tableDeleteRow: 'Delete row',
+  tableInsertColLeft: 'Insert column left',
+  tableInsertColRight: 'Insert column right',
+  tableDeleteCol: 'Delete column',
+  tableDeleteTable: 'Delete table',
   // Note actions
   rename: 'Rename',
   delete: 'Delete',
