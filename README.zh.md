@@ -78,11 +78,19 @@ TLS 配置、交叉编译、`.deb` 打包等更多构建选项，参见 [build/R
 
 ### 原生二进制 — Windows
 
-1. 从 Release 页面下载 `yinmonote-<version>-windows-amd64.zip`。
-2. 解压 ZIP。
-3. 双击 **Install.bat**（或右键 `Install.ps1` → *使用 PowerShell 运行*）。
-4. 按提示操作：可选择任务计划程序模式（无需管理员）或 Windows 服务模式（需管理员）。
-5. 安装完成后打开显示的 URL，首次启动时设置密码。
+**从 Release 页面安装：**
+
+1. 下载 `yinmonote-<version>-windows-amd64.zip` 并解压。
+2. 双击 **Install.bat**（或右键 `Install.ps1` → *使用 PowerShell 运行*）。
+3. 按提示操作：可选择任务计划程序模式（无需管理员）或 Windows 服务模式（需管理员）。
+4. 安装完成后打开显示的 URL，首次启动时设置密码。
+
+**从源码构建后安装（需要 Go 1.21+、Node 20+）：**
+
+```powershell
+make build   # 编译 → dist\yinmonote-windows-amd64.exe
+.\build\Install.ps1 -Binary dist\yinmonote-windows-amd64.exe
+```
 
 **默认路径**：笔记存放于 `%USERPROFILE%\.yinmonote\notes\`（任务计划程序模式）或
 `C:\ProgramData\YinMoNote\notes\`（Windows 服务模式）。
