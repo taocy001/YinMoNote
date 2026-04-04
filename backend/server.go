@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -278,7 +279,15 @@ func (s *Server) Run(port string) {
 		fmt.Printf("YinMo running on %s (self-signed TLS)\n", port)
 		fmt.Printf("  → This machine: install the CA cert file directly:\n")
 		fmt.Printf("    %s\n", caCertPath)
-		fmt.Printf("    macOS: open %s\n", caCertPath)
+		switch runtime.GOOS {
+		case "windows":
+			fmt.Printf("    Windows: certutil -addstore -user Root \"%s\"\n", caCertPath)
+			fmt.Printf("    Or: double-click the file → Install Certificate → Current User → Trusted Root CAs\n")
+		case "darwin":
+			fmt.Printf("    macOS: open %s\n", caCertPath)
+		default:
+			fmt.Printf("    Linux: sudo cp %s /usr/local/share/ca-certificates/yinmonote-ca.crt && sudo update-ca-certificates\n", caCertPath)
+		}
 		fmt.Printf("  → Remote devices: visit the URL below, click through the security\n")
 		fmt.Printf("    warning once (Advanced → Proceed), then install the downloaded file:\n")
 		fmt.Printf("    https://<this-server-ip>%s/ca.crt\n", port)

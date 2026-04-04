@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -29,7 +30,23 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 		os.Remove(tmpName)
 		return err
 	}
-	return os.Rename(tmpName, path)
+	// On Windows, antivirus or backup tools may briefly lock the target file,
+	// causing os.Rename to fail with ERROR_SHARING_VIOLATION or ERROR_ACCESS_DENIED.
+	// Retry up to 3 times with exponential back-off (50 → 100 → 200 ms).
+	// isTransientRenameError is a no-op on non-Windows platforms.
+	var renameErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		renameErr = os.Rename(tmpName, path)
+		if renameErr == nil {
+			return nil
+		}
+		if !isTransientRenameError(renameErr) || attempt == 3 {
+			break
+		}
+		time.Sleep(time.Duration(50<<attempt) * time.Millisecond)
+	}
+	os.Remove(tmpName)
+	return renameErr
 }
 
 // extractNoteTitle reads up to the first 512 bytes of a note to extract its title.

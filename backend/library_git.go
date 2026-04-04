@@ -179,16 +179,38 @@ func (l *NoteLibrary) StartAutoCommitter() {
 	}
 }
 
-// StartGitGC runs periodic `git gc --auto` to keep the repository size in check.
+// StartGitGC runs periodic GC to keep the repository size in check.
 // Prevents unbounded repository growth from binary assets (images).
+// Prefers native `git gc --auto` when git is in PATH; falls back to go-git
+// Prune+RepackObjects on systems without git (e.g. Windows without Git for Windows).
 func (l *NoteLibrary) StartGitGC() {
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
+	nativeUnavailableLogged := false
 	for range ticker.C {
-		cmd := exec.Command("git", "gc", "--auto", "--quiet")
-		cmd.Dir = l.DataDir
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "YinMo: git gc failed: %v\n", err)
+		if gitPath, err := exec.LookPath("git"); err == nil {
+			cmd := exec.Command(gitPath, "gc", "--auto", "--quiet")
+			cmd.Dir = l.DataDir
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "YinMo: git gc failed: %v\n", err)
+			}
+		} else {
+			// git not found in PATH — use go-git native GC (less delta-efficient,
+			// but prevents unbounded loose-object accumulation).
+			if !nativeUnavailableLogged {
+				fmt.Fprintf(os.Stderr, "YinMo: git not found in PATH, using go-git GC (install git for better compression)\n")
+				nativeUnavailableLogged = true
+			}
+			l.gitMu.Lock()
+			// Prune unreachable loose objects older than 14 days (mirrors git gc grace period).
+			// Handler must not be nil — DeleteObject is the correct PruneHandler here.
+			_ = l.repo.Prune(git.PruneOptions{
+				OnlyObjectsOlderThan: time.Now().Add(-14 * 24 * time.Hour),
+				Handler:              l.repo.DeleteObject,
+			})
+			// Pack remaining loose objects into a single packfile.
+			_ = l.repo.RepackObjects(&git.RepackConfig{})
+			l.gitMu.Unlock()
 		}
 	}
 }

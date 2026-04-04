@@ -82,6 +82,10 @@ release: ## build all packages for all platforms → dist/
 	    echo "⚠ Skipping macOS dmg (must run on macOS)"; \
 	fi
 	@echo ""
+	@echo "── [6/6] Windows/amd64 .exe ────────────"
+	@DOCKER=$(DOCKER) ./build/build.sh windows amd64 \
+	    || echo "⚠ windows/amd64 build failed, skipping"
+	@echo ""
 	@echo "════════════════════════════════════════"
 	@echo "  Done. Artifacts in dist/"
 	@echo "════════════════════════════════════════"

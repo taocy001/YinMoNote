@@ -9,9 +9,10 @@
 #   ./build/build.sh linux arm64            # linux/arm64
 #   ./build/build.sh darwin amd64           # macOS Intel
 #   ./build/build.sh darwin arm64           # macOS Apple Silicon
+#   ./build/build.sh windows amd64          # Windows x86-64 (.exe)
 #   DOCKER=1 ./build/build.sh darwin arm64  # force Docker environment
 #
-# Output: dist/yinmonote-<os>-<arch>
+# Output: dist/yinmonote-<os>-<arch>  (or .exe on Windows)
 #
 # Running the binary:
 #   DATA_DIR=/path/to/data PORT=:8080 ./dist/yinmonote-linux-amd64
@@ -28,7 +29,9 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 GOOS="${1:-linux}"
 GOARCH="${2:-amd64}"
 OUT_DIR="$PROJECT_ROOT/dist"
-OUT_NAME="yinmonote-${GOOS}-${GOARCH}"
+EXE_SUFFIX=""
+[ "$GOOS" = "windows" ] && EXE_SUFFIX=".exe"
+OUT_NAME="yinmonote-${GOOS}-${GOARCH}${EXE_SUFFIX}"
 
 mkdir -p "$OUT_DIR"
 
@@ -59,6 +62,8 @@ if [ "${DOCKER:-0}" = "1" ]; then
 
     CID=$(docker create "$TEMP_IMAGE")
     # Binary lives at /home/yinmonote/YinMoNote (non-root user, WORKDIR /home/yinmonote).
+    # Windows cross-compilation produces a .exe; the Dockerfile outputs without suffix,
+    # so we rename after copying.
     docker cp "$CID:/home/yinmonote/YinMoNote" "$OUT_DIR/$OUT_NAME"
     docker rm "$CID"
     docker rmi "$TEMP_IMAGE"
@@ -103,7 +108,8 @@ else
     touch "$PROJECT_ROOT/backend/dist/.gitkeep"
 fi
 
-chmod +x "$OUT_DIR/$OUT_NAME"
+# chmod +x is a no-op for .exe files but harmless; skip on Windows target to keep output clean.
+[ "$GOOS" != "windows" ] && chmod +x "$OUT_DIR/$OUT_NAME"
 
 echo ""
 echo "════════════════════════════════════════"
