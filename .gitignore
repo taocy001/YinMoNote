@@ -19,6 +19,9 @@ backend/dist/*
 
 # Internal architecture/audit documents (never publish)
 docs/arch/
+CLAUDE.md
+ARCHITECTURE.md
+DEPLOYMENT.md
 
 # Audit artifacts (may contain security-sensitive information)
 buglist.md
