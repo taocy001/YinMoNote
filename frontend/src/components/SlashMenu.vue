@@ -340,11 +340,21 @@ const plusHovered   = ref(false)
 // ── Drag support ──────────────────────────────────────────────────────────
 
 /**
- * Mousedown: select the depth-1 block node so dragstart gets the right slice.
+ * Mousedown: prepare for drag.
+ *
+ * 1. Cancel any pending block-menu open timer so the menu does not open
+ *    during drag initiation (the menu would interfere with drag events).
+ * 2. Close the block menu immediately if it is already open.
+ * 3. Select the depth-1 block node so dragstart gets the right slice.
+ *
  * This is the ONLY place setNodeSelection is called — not on hover — so the
  * user's cursor position is never disrupted by merely hovering the handle.
  */
 const onHandleMousedown = (_e: MouseEvent) => {
+  // Prevent the hover-delay menu from opening during a drag.
+  if (blockMenuOpenTimer) { clearTimeout(blockMenuOpenTimer); blockMenuOpenTimer = null }
+  closeBlockMenu()
+
   const ed = props.editor; if (!ed) return
   try { ed.commands.setNodeSelection(hoverBlockPos.value) } catch (_) {}
 }
@@ -364,7 +374,11 @@ const onHandleMousedown = (_e: MouseEvent) => {
  */
 const onHandleDragStart = (e: DragEvent) => {
   const ed = props.editor
-  if (!ed || !e.dataTransfer) return
+  if (!ed) return
+  // Note: e.dataTransfer is always non-null for native browser DragEvents.
+  // Chrome does NOT honour the `dataTransfer` init dict in `new DragEvent()`
+  // for synthetic events, so we guard individual uses below rather than doing
+  // an early return here — that way the core PM drag logic runs in all cases.
 
   const { state, view } = ed
   const pos = hoverBlockPos.value
@@ -392,19 +406,21 @@ const onHandleDragStart = (e: DragEvent) => {
   // and — when set — uses dragging.slice directly, skipping clipboard parsing.
   ;(view as any).dragging = { slice, move: true, node: nodeSel }
 
-  e.dataTransfer.effectAllowed = 'move'
-  e.dataTransfer.setData('text/plain', blockNode.textContent)
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', blockNode.textContent)
 
-  // Semi-transparent ghost image cloned from the rendered block DOM node.
-  const domNode = view.nodeDOM(pos)
-  if (domNode instanceof HTMLElement) {
-    const ghost = domNode.cloneNode(true) as HTMLElement
-    ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0.6;' +
-      'pointer-events:none;max-width:400px;background:var(--bg-editor);' +
-      'padding:4px 8px;border-radius:8px;font-size:14px;'
-    document.body.appendChild(ghost)
-    e.dataTransfer.setDragImage(ghost, 0, 16)
-    setTimeout(() => ghost.remove(), 0)
+    // Semi-transparent ghost image cloned from the rendered block DOM node.
+    const domNode = view.nodeDOM(pos)
+    if (domNode instanceof HTMLElement) {
+      const ghost = domNode.cloneNode(true) as HTMLElement
+      ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0.6;' +
+        'pointer-events:none;max-width:400px;background:var(--bg-editor);' +
+        'padding:4px 8px;border-radius:8px;font-size:14px;'
+      document.body.appendChild(ghost)
+      e.dataTransfer.setDragImage(ghost, 0, 16)
+      setTimeout(() => ghost.remove(), 0)
+    }
   }
 }
 
