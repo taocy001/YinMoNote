@@ -76,6 +76,19 @@ make install     # 交互式安装：数据目录 + 端口 + systemd 服务
 
 TLS 配置、交叉编译、`.deb` 打包等更多构建选项，参见 [build/README.zh.md](build/README.zh.md)。
 
+### 原生二进制 — Windows
+
+1. 从 Release 页面下载 `yinmonote-<version>-windows-amd64.zip`。
+2. 解压 ZIP。
+3. 双击 **Install.bat**（或右键 `Install.ps1` → *使用 PowerShell 运行*）。
+4. 按提示操作：可选择任务计划程序模式（无需管理员）或 Windows 服务模式（需管理员）。
+5. 安装完成后打开显示的 URL，首次启动时设置密码。
+
+**默认路径**：笔记存放于 `%USERPROFILE%\.yinmonote\notes\`（任务计划程序模式）或
+`C:\ProgramData\YinMoNote\notes\`（Windows 服务模式）。
+
+启用自签名 HTTPS 时，需在每台设备上安装一次 CA 证书（从 `/ca.crt` 下载）。
+
 ## WebDAV
 
 通过 WebDAV 连接 Obsidian Remotely Save、iA Writer 等客户端，将笔记作为可读 Markdown 文件同步。

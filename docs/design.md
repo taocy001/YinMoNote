@@ -147,7 +147,7 @@ Stage 3 (debian:bookworm):  仅复制最终二进制 → 最终镜像（非 root
 
 前端 `dist/` 通过 `go:embed` 在编译期内嵌进二进制，最终镜像仅含一个可执行文件，无需挂载静态目录。
 
-**多平台打包**：除 Docker 外，还支持 Linux DEB（amd64/arm64）和 macOS DMG（amd64/arm64）原生安装包。
+**多平台打包**：除 Docker 外，还支持 Linux DEB（amd64/arm64）、macOS DMG（amd64/arm64）以及 Windows ZIP（amd64）原生安装包。Windows 版包含交互式 PowerShell 安装脚本，支持任务计划程序（无管理员权限，登录启动）和 Windows 服务（管理员权限，开机启动）两种运行模式。
 
 ---
 
@@ -391,6 +391,7 @@ WebDAV 独立认证：静态 WebDAV token（与 SRP Session Token 无关），�
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | PWA | ✅ | manifest + Service Worker，可安装到桌面/主屏幕 |
+| Windows 支持 | ✅ | ZIP 安装包；任务计划程序（无管理员）或 Windows 服务（管理员）；自动重试 rename 应对杀毒软件锁定 |
 | 移动端适配 | ✅ | 响应式布局，侧边栏折叠，底部格式工具栏 |
 | WebDAV | ✅ | `/dav/` 路径；标题虚拟化（笔记标题而非随机 ID）；vault 前缀自动忽略 |
 | MCP 协议 | ✅ | SSE + JSON-RPC 2.0，7 个工具，AI 助手读写笔记 |

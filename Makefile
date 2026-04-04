@@ -82,8 +82,10 @@ release: ## build all packages for all platforms → dist/
 	    echo "⚠ Skipping macOS dmg (must run on macOS)"; \
 	fi
 	@echo ""
-	@echo "── [6/6] Windows/amd64 .exe ────────────"
+	@echo "── [6/6] Windows/amd64 .zip ────────────"
 	@DOCKER=$(DOCKER) ./build/build.sh windows amd64 \
+	    && ./build/package-zip.sh "$(VERSION)" amd64 \
+	    && rm -f dist/yinmonote-windows-amd64.exe \
 	    || echo "⚠ windows/amd64 build failed, skipping"
 	@echo ""
 	@echo "════════════════════════════════════════"

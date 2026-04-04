@@ -59,15 +59,27 @@ func main() {
 		runPort = ":" + runPort
 	}
 
-	// 4. Start background workers
+	// 4. Windows Service mode: hand off to the SCM handler before starting
+	// goroutines. On non-Windows or when launched as a console process,
+	// runAsWindowsService returns false and execution continues below.
+	if runAsWindowsService(lib, runPort) {
+		return
+	}
+
+	// 5. Normal console / daemon path
+	runApplication(lib, runPort)
+}
+
+// runApplication starts all background workers and the HTTP server.
+// Extracted so that the normal console path and the Windows Service path
+// share an identical startup sequence.
+func runApplication(lib *NoteLibrary, port string) {
 	go lib.StartAutoCommitter()
 	go lib.StartTrashPurger()
 	go lib.StartGitGC()
 	go lib.StartReconcileDebouncer()
-
-	// 5. Server setup
 	gin.SetMode(gin.ReleaseMode)
-	NewServer(lib).Run(runPort)
+	NewServer(lib).Run(port)
 }
 
 // getEnv retrieves an environment variable or returns a fallback value if not set.

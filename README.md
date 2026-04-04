@@ -76,6 +76,19 @@ make install     # interactive: data dir + port + systemd service
 
 For TLS, cross-compilation, `.deb` packaging, and all other build options, see [build/README.md](build/README.md).
 
+### Native Binary — Windows
+
+1. Download `yinmonote-<version>-windows-amd64.zip` from the release page.
+2. Extract the ZIP.
+3. Double-click **Install.bat** (or right-click `Install.ps1` → *Run with PowerShell*).
+4. Follow the prompts — choose Task Scheduler (no admin) or Windows Service (admin).
+5. Open the URL shown at the end of installation and set a password on first launch.
+
+**Defaults**: notes stored in `%USERPROFILE%\.yinmonote\notes\` (Task Scheduler) or
+`C:\ProgramData\YinMoNote\notes\` (Windows Service).
+
+For self-signed HTTPS, download and trust the CA cert once per device (`/ca.crt`).
+
 ## WebDAV
 
 Connect Obsidian Remotely Save, iA Writer, or any WebDAV client to sync notes as readable Markdown files.
