@@ -352,40 +352,56 @@ const onHandleMousedown = (_e: MouseEvent) => {
 /**
  * Bridge HTML5 drag into ProseMirror's internal drag mechanism so that PM
  * renders the drop cursor and inserts the slice at the correct position.
+ *
+ * Critical design notes:
+ * 1. Build the slice directly from hoverBlockPos + nodeSize — NEVER from
+ *    state.selection. setNodeSelection (called in mousedown) may throw for
+ *    non-selectable nodes and is silently caught, leaving an empty selection
+ *    that causes early-return and prevents view.dragging from being set.
+ * 2. Keep the handle element in the DOM during the drag (isDragging hides it
+ *    via opacity/pointer-events, not v-if removal). Chrome cancels a drag
+ *    when its source element is removed from the DOM after dragstart fires.
  */
 const onHandleDragStart = (e: DragEvent) => {
   const ed = props.editor
   if (!ed || !e.dataTransfer) return
 
   const { state, view } = ed
-  const sel = state.selection
-  if (sel.empty) return
+  const pos = hoverBlockPos.value
+  const blockNode = state.doc.nodeAt(pos)
+  if (!blockNode) return
 
   isDragging.value = true
-  // Do NOT set hoverCtrlVisible = false here.
-  // If the drag source element is removed from the DOM during or immediately
-  // after dragstart, Chrome cancels the entire drag operation. We keep the
-  // element in the DOM (hidden via opacity/pointer-events below) for the
-  // duration of the drag, and clean up in onHandleDragEnd.
   closeBlockMenu()
 
-  const slice = sel.content()
-  // Provide `node` (a NodeSelection) so PM can use node.replace(tr) for
-  // deletion instead of the less precise tr.deleteSelection() fallback.
-  ;(view as any).dragging = {
-    slice,
-    move: true,
-    node: sel instanceof NodeSelection ? sel : undefined,
+  // Slice spanning the exact node (openStart=0, openEnd=0 — self-contained block).
+  const slice = state.doc.slice(pos, pos + blockNode.nodeSize)
+
+  // Create a NodeSelection and dispatch it so PM state tracks the drag source.
+  // This is required for both the node.replace(tr) deletion path and the
+  // deleteSelection() fallback inside prosemirror-view's handleDrop().
+  let nodeSel: NodeSelection | undefined
+  if (NodeSelection.isSelectable(blockNode)) {
+    try {
+      nodeSel = NodeSelection.create(state.doc, pos)
+      view.dispatch(state.tr.setSelection(nodeSel))
+    } catch (_) { nodeSel = undefined }
   }
 
-  e.dataTransfer.effectAllowed = 'move'
-  e.dataTransfer.setData('text/plain', state.doc.cut(sel.from, sel.to).textContent)
+  // Register with PM's drag machinery. editHandlers.drop reads view.dragging
+  // and — when set — uses dragging.slice directly, skipping clipboard parsing.
+  ;(view as any).dragging = { slice, move: true, node: nodeSel }
 
-  // Semi-transparent ghost image cloned from the block DOM node
-  const domNode = view.nodeDOM(hoverBlockPos.value)
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', blockNode.textContent)
+
+  // Semi-transparent ghost image cloned from the rendered block DOM node.
+  const domNode = view.nodeDOM(pos)
   if (domNode instanceof HTMLElement) {
     const ghost = domNode.cloneNode(true) as HTMLElement
-    ghost.style.cssText = `position:fixed;top:-9999px;left:-9999px;opacity:0.6;pointer-events:none;max-width:400px;background:var(--bg-editor);padding:4px 8px;border-radius:8px;font-size:14px;`
+    ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0.6;' +
+      'pointer-events:none;max-width:400px;background:var(--bg-editor);' +
+      'padding:4px 8px;border-radius:8px;font-size:14px;'
     document.body.appendChild(ghost)
     e.dataTransfer.setDragImage(ghost, 0, 16)
     setTimeout(() => ghost.remove(), 0)
