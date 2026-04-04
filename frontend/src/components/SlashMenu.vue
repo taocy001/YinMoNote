@@ -4,7 +4,13 @@
     <div
       v-if="hoverCtrlVisible"
       class="fixed z-[60] select-none"
-      :style="{ top: hoverCtrlTop + 'px', left: hoverCtrlLeft + 'px', transform: 'translateY(-50%)' }"
+      :style="{
+        top: hoverCtrlTop + 'px',
+        left: hoverCtrlLeft + 'px',
+        transform: 'translateY(-50%)',
+        opacity: isDragging ? '0' : '1',
+        pointerEvents: isDragging ? 'none' : 'auto',
+      }"
       @mouseenter="keepHoverCtrl"
       @mouseleave="scheduleHideHoverCtrl"
     >
@@ -23,7 +29,8 @@
       <div
         v-else
         draggable="true"
-        class="w-6 h-6 flex items-center justify-center rounded cursor-grab transition-colors"
+        class="w-6 h-6 flex items-center justify-center rounded transition-colors"
+        :class="isDragging ? 'cursor-grabbing' : 'cursor-grab'"
         :style="{ color: 'var(--text-muted)', background: handleHovered ? 'var(--bg-hover)' : 'transparent' }"
         :title="t.dragHandle"
         :aria-label="t.dragHandle"
@@ -255,6 +262,7 @@
 import { ref, computed, nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
+import { NodeSelection } from 'prosemirror-state'
 import {
   GripVertical, Scissors, Copy, FileText, Trash2,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
@@ -294,7 +302,10 @@ const hoverCtrlLeft = ref(0)
 const hoverBlockEmpty = ref(false)
 const hoverBlockPos = ref(0)
 let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
-let _isDragging = false
+// Reactive so the template can hide-but-keep-in-DOM during drag.
+// A non-reactive flag would also be read by showHoverCtrl, but the template
+// needs reactivity to toggle opacity/pointer-events without a v-if removal.
+const isDragging = ref(false)
 
 const scheduleHideHoverCtrl = () => {
   hoverHideTimer = setTimeout(() => {
@@ -313,7 +324,7 @@ const keepHoverCtrl = () => {
  * Guard: no-op while dragging or while any menu is open (prevents flicker).
  */
 const showHoverCtrl = (top: number, left: number, isEmpty: boolean, blockPos: number) => {
-  if (_isDragging || blockMenuVisible.value || slashMenuVisible.value) return
+  if (isDragging.value || blockMenuVisible.value || slashMenuVisible.value) return
   if (hoverHideTimer) clearTimeout(hoverHideTimer)
   hoverCtrlTop.value = top
   hoverCtrlLeft.value = left
@@ -345,16 +356,27 @@ const onHandleMousedown = (_e: MouseEvent) => {
 const onHandleDragStart = (e: DragEvent) => {
   const ed = props.editor
   if (!ed || !e.dataTransfer) return
-  _isDragging = true
-  hoverCtrlVisible.value = false
-  closeBlockMenu()
 
   const { state, view } = ed
   const sel = state.selection
   if (sel.empty) return
 
+  isDragging.value = true
+  // Do NOT set hoverCtrlVisible = false here.
+  // If the drag source element is removed from the DOM during or immediately
+  // after dragstart, Chrome cancels the entire drag operation. We keep the
+  // element in the DOM (hidden via opacity/pointer-events below) for the
+  // duration of the drag, and clean up in onHandleDragEnd.
+  closeBlockMenu()
+
   const slice = sel.content()
-  ;(view as any).dragging = { slice, move: true }
+  // Provide `node` (a NodeSelection) so PM can use node.replace(tr) for
+  // deletion instead of the less precise tr.deleteSelection() fallback.
+  ;(view as any).dragging = {
+    slice,
+    move: true,
+    node: sel instanceof NodeSelection ? sel : undefined,
+  }
 
   e.dataTransfer.effectAllowed = 'move'
   e.dataTransfer.setData('text/plain', state.doc.cut(sel.from, sel.to).textContent)
@@ -371,7 +393,8 @@ const onHandleDragStart = (e: DragEvent) => {
 }
 
 const onHandleDragEnd = () => {
-  _isDragging = false
+  isDragging.value = false
+  hoverCtrlVisible.value = false
   const ed = props.editor
   if (ed && (ed.view as any).dragging) {
     ;(ed.view as any).dragging = null
