@@ -24,7 +24,7 @@ The editor is built on [Tiptap](https://tiptap.dev/) and renders every element i
 | Math | KaTeX — block math and inline math (`$E=mc^2$`) |
 | Diagrams | Mermaid (flowchart, sequence, class, …) with dark-mode awareness |
 | Rich blocks | Callout (info / warning / tip / danger), Toggle (collapsible section) |
-| Tables | Full table editing with row/column operations |
+| Tables | Full table editing with row/column operations, resizable columns, Feishu-style row/col selector bars, mobile long-press menu |
 | Media | Image upload with viewport lazy loading |
 
 Smart Markdown paste: paste raw Markdown text and it is parsed and rendered immediately without manual conversion.

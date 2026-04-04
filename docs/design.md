@@ -1,6 +1,6 @@
 # 隐墨笔记 (YinMoNote) — 技术设计文档
 
-> 本文档是活文档，随功能演进持续更新。上次全量刷新：2026-04-02
+> 本文档是活文档，随功能演进持续更新。上次全量刷新：2026-04-04
 
 ---
 
@@ -56,6 +56,7 @@
   │   ├── MobileToolbar.vue  # 移动端底部格式工具栏
   │   ├── ShortcutsModal.vue # 快捷键帮助弹窗
   │   ├── SlashMenu.vue      # 斜杠命令菜单 + hover 块操作
+  │   ├── TableOverlay.vue   # 表格覆盖层：飞书风格行列选择器栏（悬停显示），手机端长按上下文菜单
   │   ├── Callout.ts         # Callout Tiptap 扩展定义
   │   ├── ToggleBlock.ts     # ToggleBlock Tiptap 扩展定义
   │   ├── InlineMath.ts      # InlineMath Tiptap 扩展定义
@@ -302,7 +303,7 @@ WebDAV 独立认证：静态 WebDAV token（与 SRP Session Token 无关），�
 | 行内数学公式 | ✅ | `$formula$` 语法触发 KaTeX 渲染 |
 | 数学公式块 | ✅ | 代码块语言设为 `math`，KaTeX 渲染 |
 | Mermaid 图表 | ✅ | 代码块语言设为 `mermaid`，可切换源码/预览，暗色模式适配 |
-| 表格 | ✅ | 完整表格编辑，表头行，可调列宽，行列操作 |
+| 表格 | ✅ | 完整表格编辑，表头行，可调列宽，行列操作；飞书风格行列选择器栏（悬停显示），手机端长按上下文菜单 |
 | 链接 | ✅ | 自动识别 URL，气泡菜单编辑链接 |
 | 图片 | ✅ | 拖入/粘贴上传，懒加载（IntersectionObserver），拖拽缩放，Retina 修正 |
 | 水平分割线 | ✅ | `---` 语法或 Slash 命令 |

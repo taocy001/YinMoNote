@@ -81,6 +81,8 @@
 | `designSystem.test.ts` | 62 | CSS 变量完整性（type scale/动效/语义色/surface）、工具类、字号标准化 |
 | `commandPalette.test.ts` | 27 | 模式切换、命令过滤、笔记搜索、最近访问、键盘导航、事件触发、ARIA 无障碍 |
 
+> **已知缺口**：`TableOverlay.vue`（飞书风格表格叠加层，含移动端长按菜单、行列选择器栏、对齐操作）目前无专项单元测试。相关功能通过 E2E 测试（Playwright）验证。如需补充单元测试，需在 happy-dom 环境中 mock `getBoundingClientRect` 和 `ClipboardItem` API。
+
 ---
 
 ## 4. E2E 测试覆盖范围

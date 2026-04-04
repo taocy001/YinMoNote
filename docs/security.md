@@ -1,6 +1,6 @@
 # YinMoNote 安全现状
 
-> 上次全量更新：2026-03-26
+> 上次全量更新：2026-04-04
 
 本文档描述 YinMoNote 当前的安全防护体系、已知限制和可接受的风险。
 
@@ -117,6 +117,7 @@ WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
 - 3 次以上连续失败 → 每次增加 500ms 延迟（上限 5s）
 - 并发认证延迟限流：同时进行的延迟最多 20 个（信号量），超过上限时**跳过本次 sleep**（延迟绕过），但 `recordAuthFailure` 仍然执行，累计失败计数不受影响
 - `authFailures` 计数 30 分钟无活动后清除该 IP
+- `authFailures` 表最多记录 **1000** 个 IP（`maxAuthFailureEntries`）；超过上限时新 IP 的失败计数被静默忽略，已记录 IP 不受影响
 
 ---
 
@@ -141,6 +142,7 @@ WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
 - 导出 HTML/PDF 经过 `sanitizeExportHtml`：额外阻止 `<svg>`、`<style>`、`<iframe>` 标签、`data:` URI 及 CSS `url()` 外链
 - Mermaid SVG 渲染后二次净化：移除 `<script>`、`<foreignObject>`、`<use>` 及 on* 属性
 - 外部 HTTP 图片默认阻断（SEC-016），需用户在设置中显式允许
+- 表格复制（TableOverlay）仅使用现代 `ClipboardItem` API（HTTPS 环境），已移除 `execCommand` 回退——`execCommand` 会将 HTML 写入系统剪贴板，在某些场景下存在 XSS 风险
 
 ---
 
@@ -172,7 +174,7 @@ WebDAV 使用独立的静态 token（与 SRP Session Token 无关）：
 | batchUpdateEncryption 无原子性 | 📝 已记录 | 批量加密部分失败时服务端处于混合状态；已有失败计数提示和重试入口，无法彻底原子化 |
 | sessionWrapKey PBKDF2 10,000 次迭代（固定盐） | 📝 已记录 | 已从 1,000 提升至 10,000 次；盐固定为 `'yinmo-session-wrap-v1'`（非随机）；XSS 场景下 window.name 和 sessionStorage 均可被读取，迭代数和固定盐的实际防护意义有限（代码注释已说明此权衡）；主密钥的 non-extractable 是最终防线 |
 | Bearer Token 在无 HTTPS 时明文传输 | 📝 已记录 | 强烈建议搭配内置 TLS 或 Nginx TLS 或 Tailscale 使用，不要将裸 HTTP 暴露在公网 |
-| authFailures 按 IP 空闲超时 | 📝 已记录 | 30 分钟无活动后清除该 IP 计数；清除后该 IP 可再次触发延迟计数，单用户私有部署场景可接受 |
+| authFailures 按 IP 空闲超时 | 📝 已记录 | 30 分钟无活动后清除该 IP 计数；清除后该 IP 可再次触发延迟计数，单用户私有部署场景可接受；`authFailures` 表上限 1000 条（`maxAuthFailureEntries`），超出后新 IP 的失败计数被静默忽略 |
 | IndexedDB 缓存在非正常退出时可能残留 | 📝 已记录 | 加密模式下 lockLibrary 清空缓存，但直接关闭标签页时 `beforeunload` 不保证执行；缓存存储的是 ENC1 密文而非明文，风险可控 |
 | `E2E_RESET_AUTH=1` 开放无认证重置端点 | 📝 已记录 | `E2E_RESET_AUTH=1` 时注册 `POST /api/test/reset-auth`，无需 Bearer token 即可清除 SRP 凭据；该变量仅供 E2E 测试环境使用，**严禁在生产部署中设置**；端点在运行时额外检查请求 IP 必须为 loopback（127.0.0.1/::1），详见 TD-M3-034 |
 | WebDAV `PROPFIND Depth: infinity` 被拒绝 | 📝 已记录 | 所有 `Depth: infinity` 的 PROPFIND 请求返回 `403 Forbidden`（RFC 4918 §9.1 允许此行为）；部分 WebDAV 客户端（如某些 Obsidian 插件版本）依赖 infinity 深度进行初始化同步，使用前请确认客户端兼容性 |
