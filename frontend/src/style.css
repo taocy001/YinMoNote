@@ -151,6 +151,10 @@ select:focus-visible,
 .menu-item:active {
   background: var(--bg-hover) !important;
 }
+.menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 /* ── transitions: also honour reduced-motion for transition durations ── */
 @media (prefers-reduced-motion: reduce) {

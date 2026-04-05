@@ -3,13 +3,12 @@
     <!-- ── Single hover handle ───────────────────────────────────────────── -->
     <div
       v-if="hoverCtrlVisible"
-      class="fixed z-[60] select-none"
+      class="fixed z-[80] select-none"
       :style="{
         top: hoverCtrlTop + 'px',
         left: hoverCtrlLeft + 'px',
         transform: 'translateY(-50%)',
         opacity: isDragging ? '0' : '1',
-        pointerEvents: isDragging ? 'none' : 'auto',
       }"
       @mouseenter="keepHoverCtrl"
       @mouseleave="scheduleHideHoverCtrl"
@@ -28,6 +27,7 @@
       <!-- Hover opens block menu after a short delay; mousedown + dragstart handles drag -->
       <div
         v-else
+        ref="handleEl"
         draggable="true"
         class="w-6 h-6 flex items-center justify-center rounded transition-colors"
         :class="isDragging ? 'cursor-grabbing' : 'cursor-grab'"
@@ -259,7 +259,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onUnmounted } from 'vue'
 import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { NodeSelection } from 'prosemirror-state'
@@ -309,8 +309,9 @@ const isDragging = ref(false)
 
 const scheduleHideHoverCtrl = () => {
   hoverHideTimer = setTimeout(() => {
-    // Keep the handle visible while any menu spawned from it is still open.
-    if (!blockMenuVisible.value && !slashMenuVisible.value) {
+    // Keep the handle visible while any menu spawned from it is still open,
+    // and while a drag is in progress (removing the source element cancels Chrome drag).
+    if (!blockMenuVisible.value && !slashMenuVisible.value && !isDragging.value) {
       hoverCtrlVisible.value = false
     }
   }, 300)
@@ -336,6 +337,7 @@ const showHoverCtrl = (top: number, left: number, isEmpty: boolean, blockPos: nu
 // ── Handle visual state ───────────────────────────────────────────────────
 const handleHovered = ref(false)
 const plusHovered   = ref(false)
+const handleEl = ref<HTMLElement>()
 
 // ── Drag support ──────────────────────────────────────────────────────────
 
@@ -375,11 +377,6 @@ const onHandleMousedown = (_e: MouseEvent) => {
 const onHandleDragStart = (e: DragEvent) => {
   const ed = props.editor
   if (!ed) return
-  // Note: e.dataTransfer is always non-null for native browser DragEvents.
-  // Chrome does NOT honour the `dataTransfer` init dict in `new DragEvent()`
-  // for synthetic events, so we guard individual uses below rather than doing
-  // an early return here — that way the core PM drag logic runs in all cases.
-
   const { state, view } = ed
   const pos = hoverBlockPos.value
   const blockNode = state.doc.nodeAt(pos)
@@ -406,21 +403,23 @@ const onHandleDragStart = (e: DragEvent) => {
   // and — when set — uses dragging.slice directly, skipping clipboard parsing.
   ;(view as any).dragging = { slice, move: true, node: nodeSel }
 
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', blockNode.textContent)
+  if (!e.dataTransfer) {
+    console.warn('[YinMo] dragstart: dataTransfer is null, skipping')
+    return
+  }
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', blockNode.textContent)
 
-    // Semi-transparent ghost image cloned from the rendered block DOM node.
-    const domNode = view.nodeDOM(pos)
-    if (domNode instanceof HTMLElement) {
-      const ghost = domNode.cloneNode(true) as HTMLElement
-      ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0.6;' +
-        'pointer-events:none;max-width:400px;background:var(--bg-editor);' +
-        'padding:4px 8px;border-radius:8px;font-size:14px;'
-      document.body.appendChild(ghost)
-      e.dataTransfer.setDragImage(ghost, 0, 16)
-      setTimeout(() => ghost.remove(), 0)
-    }
+  // Semi-transparent ghost image cloned from the rendered block DOM node.
+  const domNode = view.nodeDOM(pos)
+  if (domNode instanceof HTMLElement) {
+    const ghost = domNode.cloneNode(true) as HTMLElement
+    ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0.6;' +
+      'pointer-events:none;max-width:400px;max-height:200px;overflow:hidden;' +
+      'background:var(--bg-editor);padding:4px 8px;border-radius:8px;font-size:14px;'
+    document.body.appendChild(ghost)
+    e.dataTransfer.setDragImage(ghost, 0, 16)
+    setTimeout(() => ghost.remove(), 0)
   }
 }
 
@@ -929,5 +928,14 @@ defineExpose({
   hoverCtrlVisible,
   hoverCtrlTop,
   hoverCtrlLeft,
+})
+
+onUnmounted(() => {
+  if (hoverHideTimer) clearTimeout(hoverHideTimer)
+  if (blockMenuOpenTimer) clearTimeout(blockMenuOpenTimer)
+  if (blockMenuCloseTimer) clearTimeout(blockMenuCloseTimer)
+  if (plusMenuOpenTimer) clearTimeout(plusMenuOpenTimer)
+  if (slashHoverCloseTimer) clearTimeout(slashHoverCloseTimer)
+  isDragging.value = false
 })
 </script>

@@ -133,7 +133,7 @@ data-testid="settings-btn" class="editor-toolbar-btn w-7 h-7 flex items-center j
       </div>
 
       <!-- Editor viewport / Diff view — share the same flex slot -->
-      <div class="flex-1 flex flex-col relative min-w-0 bg-transparent overflow-hidden">
+      <div class="flex-1 flex flex-col relative min-w-0 bg-transparent overflow-hidden" @dragover.prevent="onEditorWrapperDragOver" @drop.prevent="onEditorWrapperDrop">
         <!-- Loading / error overlays (only relevant when editor is visible) -->
         <div v-if="isLoading && !diffPayload" class="absolute inset-0 z-10 flex items-center justify-center backdrop-blur-[1px]" style="background: rgba(255,255,255,0.06);">
           <div class="flex flex-col items-center gap-2">
@@ -221,6 +221,7 @@ import { useEditor, EditorContent, VueNodeViewRenderer } from '@tiptap/vue-3'
 import { Extension, type Editor as TiptapEditor } from '@tiptap/core'
 import { TextSelection, Plugin, PluginKey } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
+import type { EditorView } from 'prosemirror-view'
 import type { Node as ProsemirrorNode } from 'prosemirror-model'
 import { DOMSerializer } from 'prosemirror-model'
 import type { MarkdownSerializerState } from 'prosemirror-markdown'
@@ -268,6 +269,13 @@ import { useWordStats } from '../composables/useWordStats'
 import { useExport } from '../composables/useExport'
 import { useFindReplace } from '../composables/useFindReplace'
 import { useEditorSave } from '../composables/useEditorSave'
+
+const MARKDOWN_PATTERN = /#\s|\*\*|\[.+?\]\(.+?\)|`{3}|\|\s*---|- \[[ x]\]|==.+==|\$[^$]+\$/
+
+/** Local alias — mirrors the same interface in TableOverlay.vue */
+interface EditorViewWithDragging extends EditorView {
+  dragging: { slice: import('prosemirror-model').Slice; move: boolean; node?: unknown } | null
+}
 
 const lowlight = createLowlight(all)
 
@@ -323,6 +331,47 @@ const {
   findNext, findPrev, replaceOne, replaceAllMatches,
   openFindBar, closeFindBar,
 } = useFindReplace({ editor: editorRef, searchHighlightKey })
+
+/**
+ * The drag handle lives in the padding area of EditorContent (outside view.dom).
+ * When the user drops there, the native drop event fires on the wrapper, not on
+ * view.dom, so ProseMirror never sees it.
+ *
+ * Fix: catch dragover/drop on the wrapper and forward them to view.dom with the
+ * clientX clamped into view.dom's rect. posAtCoords() requires the coordinates to
+ * be inside view.dom, so raw padding-area coords (which make it return null) must
+ * be nudged in by 1 px. The Y is kept as-is so PM resolves the correct block.
+ */
+const onEditorWrapperDragOver = (e: DragEvent) => {
+  const ed = editor.value
+  if (!ed || !(ed.view as EditorViewWithDragging).dragging) return
+  if (ed.view.dom.contains(e.target as Node)) return
+  const box = ed.view.dom.getBoundingClientRect()
+  const x = Math.max(box.left + 1, Math.min(box.right - 1, e.clientX))
+  const y = Math.max(box.top + 1, Math.min(box.bottom - 1, e.clientY))
+  try {
+    ed.view.dom.dispatchEvent(new DragEvent('dragover', { bubbles: false, cancelable: true, clientX: x, clientY: y }))
+  } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] dragover forward failed:', e) }
+}
+const onEditorWrapperDrop = (e: DragEvent) => {
+  const ed = editor.value
+  if (!ed || !(ed.view as EditorViewWithDragging).dragging) return
+  if (ed.view.dom.contains(e.target as Node)) return
+  const box = ed.view.dom.getBoundingClientRect()
+  const x = Math.max(box.left + 1, Math.min(box.right - 1, e.clientX))
+  const y = Math.max(box.top + 1, Math.min(box.bottom - 1, e.clientY))
+  try {
+    // Chrome ignores the dataTransfer init-dict arg in DragEvent constructor for security
+    // reasons, so event.dataTransfer would be null and PM's handleDrop would bail out.
+    // Object.defineProperty injects a minimal mock that satisfies PM's null-check while
+    // view.dragging.slice (set in onHandleDragStart) carries the actual content.
+    const synthetic = new DragEvent('drop', { bubbles: false, cancelable: true, clientX: x, clientY: y })
+    Object.defineProperty(synthetic, 'dataTransfer', {
+      get: () => ({ files: { length: 0 }, getData: () => '', clearData: () => {}, effectAllowed: 'move', dropEffect: 'move' }),
+    })
+    ed.view.dom.dispatchEvent(synthetic)
+  } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] drop forward failed:', e) }
+}
 
 /**
  * Handles editor scroll to trigger incremental content loading.
@@ -521,6 +570,19 @@ const applyTypewriterScroll = () => {
 // Track whether search highlight decorations are active so we can clear them on first edit.
 let _searchHighlightActive = !!props.searchHighlight
 
+function pasteAsMarkdown(view: EditorView, text: string): boolean {
+  if (!MARKDOWN_PATTERN.test(text)) return false
+  try {
+    const parser = (editor.value?.storage as { markdown?: { parser?: { parse(t: string): ProsemirrorNode } } }).markdown?.parser
+    if (!parser) return false
+    const node = parser.parse(text)
+    if (node) { view.dispatch(view.state.tr.replaceSelectionWith(node)); return true }
+  } catch (err) {
+    console.warn('[YinMo] Markdown paste parse failed:', err)
+  }
+  return false
+}
+
 // Editor Setup
 const editor = useEditor({
   extensions: [
@@ -646,6 +708,8 @@ const editor = useEditor({
         // Anchor control to the block's own left edge — independent of sidebar width
         const left = rect.left - 32
         if (left < 4) { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
+        // Tables use the corner-button drag handle in TableOverlay — skip the sidebar handle.
+        if (blockNode.type.name === 'table') { slashMenuRef.value.scheduleHideHoverCtrl(); return false }
         const top = rect.top + rect.height / 2
         // Empty block: no text content (ignores structural nodes like image, hr)
         const textTypes = new Set(['paragraph','heading','blockquote','callout','toggleBlock'])
@@ -664,8 +728,11 @@ const editor = useEditor({
       if (files && files.length > 0) { for (let i = 0; i < files.length; i++) { if (files[i].type.startsWith('image/')) { uploadImage(files[i]); hasImage = true } } }
       if (!hasImage) { const items = Array.from(e.clipboardData?.items || []); for (const item of items) { if (item.type.startsWith('image/')) { const file = item.getAsFile(); if (file) { uploadImage(file); hasImage = true } } } }
       if (hasImage) return true
-      const text = e.clipboardData?.getData('text/plain') || ''; const html = e.clipboardData?.getData('text/html') || ''; const isMarkdown = /#\s|\*\*|\[.+?\]\(.+?\)|`{3}|\|\s*---|- \[[ x]\]|==.+==|\$[^$]+\$/.test(text)
-      if (text && isMarkdown && (!html || html.includes('data-mime="text/x-markdown"'))) { try { const parser = (editor.value?.storage as any).markdown?.parser; if (!parser) return false; const node = parser.parse(text); if (node) { view.dispatch(view.state.tr.replaceSelectionWith(node)); return true } } catch (err) { console.warn('[YinMo] Markdown paste parse failed:', err) } }
+      const text = e.clipboardData?.getData('text/plain') || ''
+      const html = e.clipboardData?.getData('text/html') || ''
+      if (text && (!html || html.includes('data-mime="text/x-markdown"'))) {
+        if (pasteAsMarkdown(view, text)) return true
+      }
       return false
     },
     handleDrop: (_view, e) => {

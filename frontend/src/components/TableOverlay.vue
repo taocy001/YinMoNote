@@ -1,73 +1,81 @@
 <template>
   <Teleport to="body">
-    <!-- ── Row selector bars (left of each row, 20px wide) ─────────────── -->
-    <!-- Positioned with a 6px gap to the left of the table.
-         Clamped so they never go off the left viewport edge.
-         Each bar is 20px wide — large enough to reliably click.          -->
+    <!-- ── Row selector bars — slim, right-anchored, Feishu-style ────────────── -->
     <template v-if="tableRect">
       <div
         v-for="row in rowInfos"
         :key="`rb${row.index}`"
         data-table-overlay
-        class="fixed z-[77] cursor-pointer flex items-center justify-center rounded transition-all select-none"
+        class="fixed z-[77] cursor-pointer select-none"
         :style="{
-          top:          (row.rect.top + 2) + 'px',
-          left:         Math.max(4, tableRect.left - 34) + 'px',
-          width:        '28px',
-          height:       Math.max(36, row.rect.height - 4) + 'px',
+          top:          row.rect.top + 'px',
+          right:        (vw - tableRect.left + 2) + 'px',
+          width:        activeRowIdx === row.index ? '14px' : '5px',
+          height:       row.rect.height + 'px',
           background:   'var(--accent)',
-          color:        '#fff',
-          borderRadius: '4px',
-          opacity:      activeRowIdx === row.index ? '1' : '0',
-          pointerEvents: activeRowIdx === row.index ? 'auto' : 'none',
+          borderRadius: '3px 0 0 3px',
+          opacity:      activeRowIdx === row.index ? '0.9' : '0.2',
+          pointerEvents: 'auto',
+          transition:   'width 0.12s, opacity 0.12s',
         }"
         @mouseenter="activeRowIdx = row.index; keepVisible()"
         @mouseleave="activeRowIdx = -1; keepVisible()"
         @click.stop="onRowBarClick($event, row)"
-      >
-        <GripVertical :size="12" />
-      </div>
+      />
     </template>
 
-    <!-- ── Column selector bars (above each column, 16px tall) ───────────── -->
+    <!-- ── Column selector bars — slim, bottom-anchored, Feishu-style ──────────── -->
     <template v-if="tableRect">
       <div
         v-for="col in colInfos"
         :key="`cb${col.index}`"
         data-table-overlay
-        class="fixed z-[77] cursor-pointer flex items-center justify-center rounded transition-all select-none"
+        class="fixed z-[77] cursor-pointer select-none"
         :style="{
-          left:          (col.rect.left + 2) + 'px',
-          top:           Math.max(4, tableRect.top - 30) + 'px',
-          height:        '24px',
-          width:         Math.max(36, col.rect.width - 4) + 'px',
-          background:    'var(--accent)',
-          color:         '#fff',
-          borderRadius:  '4px',
-          opacity:       activeColIdx === col.index ? '1' : '0',
-          pointerEvents: activeColIdx === col.index ? 'auto' : 'none',
+          left:         col.rect.left + 'px',
+          bottom:       (vh - tableRect.top + 2) + 'px',
+          width:        col.rect.width + 'px',
+          height:       activeColIdx === col.index ? '12px' : '4px',
+          background:   'var(--accent)',
+          borderRadius: '3px 3px 0 0',
+          opacity:      activeColIdx === col.index ? '0.9' : '0.2',
+          pointerEvents: 'auto',
+          transition:   'height 0.12s, opacity 0.12s',
         }"
         @mouseenter="activeColIdx = col.index; keepVisible()"
         @mouseleave="activeColIdx = -1; keepVisible()"
         @click.stop="onColBarClick($event, col)"
-      >
-        <GripHorizontal :size="12" />
-      </div>
+      />
     </template>
 
-    <!-- ── Table corner button (top-left, 24×24) ─────────────────────────── -->
+    <!-- ── Corner group: [⠿ drag handle] + [⊞ table menu] ──────────────────── -->
     <div
       v-if="tableRect"
       data-table-overlay
-      class="fixed z-[78] select-none"
+      class="fixed z-[78] flex items-center gap-0.5 select-none"
       :style="{
-        top:  Math.max(4, tableRect.top - 30) + 'px',
-        left: Math.max(4, tableRect.left - 34) + 'px',
-        transform: 'none',
+        top:     Math.max(4, tableRect.top - 30) + 'px',
+        left:    Math.max(4, tableRect.left - 4) + 'px',
+        opacity: isCornerDragging ? '0' : '1',
+        transition: 'opacity 0.1s',
       }"
       @mouseenter="keepVisible"
       @mouseleave="keepVisible"
     >
+      <!-- Drag handle: drags the whole table block -->
+      <div
+        draggable="true"
+        class="w-6 h-6 flex items-center justify-center rounded transition-colors"
+        :class="isCornerDragging ? 'cursor-grabbing' : 'cursor-grab'"
+        :style="{ color: 'var(--text-muted)', background: 'var(--bg-editor)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }"
+        :title="t.dragHandle"
+        @mousedown.prevent="onCornerMousedown"
+        @dragstart="onCornerDragStart"
+        @dragend="onCornerDragEnd"
+        @mouseenter="(e: MouseEvent) => (e.currentTarget as HTMLElement).style.background='var(--bg-hover)'"
+        @mouseleave="(e: MouseEvent) => { if (!isCornerDragging) (e.currentTarget as HTMLElement).style.background='var(--bg-editor)' }"
+      ><GripVertical :size="12" /></div>
+      <!-- Table menu button -->
       <button
         class="menu-item w-6 h-6 flex items-center justify-center rounded transition-colors"
         :style="tableMenuVisible
@@ -322,6 +330,16 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { DOMSerializer } from '@tiptap/pm/model'
+import type { Slice } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
+
+/** ProseMirror EditorView 的内部 dragging 状态（非公开 API，局部声明） */
+interface EditorViewWithDragging extends EditorView {
+  dragging: { slice: Slice; move: boolean; node?: unknown } | null
+}
+/** editor.chain() 动态命令调用辅助类型 */
+type ChainedAny = ReturnType<TiptapEditor['chain']> & Record<string, () => ReturnType<TiptapEditor['chain']>>
 import {
   TableProperties, Trash2,
   ArrowUpToLine, ArrowDownToLine, ArrowLeftToLine, ArrowRightToLine,
@@ -329,13 +347,17 @@ import {
   Rows2, Columns2, LayoutList,
   Copy, Scissors, MoveRight, MoveLeft,
   Bold, Italic, Underline, Strikethrough, Code,
-  X, GripVertical, GripHorizontal,
+  X, GripVertical,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
   editor: TiptapEditor | undefined
   t: Record<string, any>
 }>()
+
+// ── Viewport helpers (reactive, used in template :style bindings) ─────────
+const vw = ref(window.innerWidth)
+const vh = ref(window.innerHeight)
 
 // ── DOM state ─────────────────────────────────────────────────────────────
 interface RowInfo { el: HTMLTableRowElement; rect: DOMRect; index: number }
@@ -349,6 +371,9 @@ const colInfos   = ref<ColInfo[]>([])
 // Hover highlight indices
 const activeRowIdx = ref(-1)
 const activeColIdx = ref(-1)
+
+// Drag state for the corner drag handle
+const isCornerDragging = ref(false)
 
 // ── Menu state ────────────────────────────────────────────────────────────
 const tableMenuVisible  = ref(false)
@@ -487,13 +512,13 @@ const focusCell = (cellEl: HTMLElement): boolean => {
     const pos = props.editor.view.posAtDOM(cellEl, 0) + 1
     props.editor.chain().focus().setTextSelection(pos).run()
     return true
-  } catch (_) { return false }
+  } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] posAtDOM failed:', e); return false }
 }
 
 // ── Command helpers ───────────────────────────────────────────────────────
 const runCmd = (cmd: string) => {
   if (!props.editor) return
-  ;(props.editor.chain().focus() as any)[cmd]().run()
+  ;(props.editor.chain().focus() as ChainedAny)[cmd]().run()
   closeAllMenus()
   nextTick(refreshInfo)
 }
@@ -504,7 +529,7 @@ const runRowCmd = (cmd: string) => {
   const cell = row.querySelector('td, th') as HTMLElement | null
   if (!cell) return
   if (focusCell(cell)) {
-    ;(props.editor.chain().focus() as any)[cmd]().run()
+    ;(props.editor.chain().focus() as ChainedAny)[cmd]().run()
   }
   closeAllMenus()
   nextTick(refreshInfo)
@@ -514,7 +539,7 @@ const runColCmd = (cmd: string) => {
   const cell = colMenuTargetCell.value
   if (!cell || !props.editor) return
   if (focusCell(cell)) {
-    ;(props.editor.chain().focus() as any)[cmd]().run()
+    ;(props.editor.chain().focus() as ChainedAny)[cmd]().run()
   }
   closeAllMenus()
   nextTick(refreshInfo)
@@ -537,7 +562,7 @@ const applyAlignToCells = (cells: HTMLElement[], align: string) => {
           tr.setNodeMarkup(cellContentStart + offset, undefined, { ...child.attrs, textAlign: align })
         }
       })
-    } catch (_) { /* skip cells that can't be resolved */ }
+    } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] applyAlignToCells: cell skip:', e) }
   }
   dispatch(tr)
 }
@@ -584,7 +609,7 @@ const applyMarkToCells = (cells: HTMLElement[], markName: string) => {
       state.doc.nodesBetween(from, to, node => {
         if (node.isText && !markType.isInSet(node.marks)) allHaveMark = false
       })
-    } catch (_) { /* skip cells that can't be resolved */ }
+    } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] applyMarkToCells: cell skip:', e) }
   }
 
   const tr = state.tr
@@ -629,7 +654,7 @@ const applyBgToCells = (cells: HTMLElement[], color: string | null) => {
       if (cellNode.type.name === 'tableCell' || cellNode.type.name === 'tableHeader') {
         tr.setNodeMarkup(cellPos, undefined, { ...cellNode.attrs, backgroundColor: color })
       }
-    } catch (_) { /* skip */ }
+    } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] applyBgToCells: cell skip:', e) }
   }
   dispatch(tr)
 }
@@ -666,7 +691,7 @@ const distributeColsEvenly = () => {
   let tablePos: number
   try {
     tablePos = props.editor.view.posAtDOM(tableEl.value, 0) - 1
-  } catch (_) { return }
+  } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] posAtDOM failed:', e); return }
   const tableNode = state.doc.nodeAt(tablePos)
   if (!tableNode || tableNode.type.name !== 'table') return
 
@@ -721,7 +746,7 @@ const copyTableToClipboard = async (html: string): Promise<boolean> => {
       }),
     ])
     return true
-  } catch (_) { return false }
+  } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] copyTable failed:', e); return false }
 }
 
 const copyTable = async () => {
@@ -734,7 +759,7 @@ const cutTable = async () => {
   const html = getTableHtml()
   if (html) {
     await copyTableToClipboard(html)
-    ;(props.editor?.chain().focus() as any)?.deleteTable().run()
+    props.editor?.chain().focus().deleteTable().run()
   }
   closeAllMenus()
 }
@@ -818,6 +843,60 @@ const scheduleHide = () => {
     activeRowIdx.value = -1
     activeColIdx.value = -1
   }, 300)
+}
+
+// ── Corner drag handlers (drag the entire table block) ────────────────────
+
+const onCornerMousedown = (_e: MouseEvent) => {
+  // Close any open menus so they don't interfere with the drag
+  closeAllMenus()
+}
+
+const onCornerDragStart = (e: DragEvent) => {
+  if (!props.editor || !tableEl.value) return
+  const { state, view } = props.editor
+
+  let tablePos: number
+  try {
+    tablePos = view.posAtDOM(tableEl.value, 0) - 1
+  } catch (e) { if (import.meta.env.DEV) console.warn('[YinMo] posAtDOM failed:', e); return }
+
+  const tableNode = state.doc.nodeAt(tablePos)
+  if (!tableNode || tableNode.type.name !== 'table') return
+
+  isCornerDragging.value = true
+
+  const slice = state.doc.slice(tablePos, tablePos + tableNode.nodeSize)
+
+  // Set NodeSelection so PM knows what to delete after the move
+  try {
+    const nodeSel = NodeSelection.create(state.doc, tablePos)
+    view.dispatch(state.tr.setSelection(nodeSel))
+    ;(view as EditorViewWithDragging).dragging = { slice, move: true, node: nodeSel }
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('[YinMo] NodeSelection failed, falling back:', e)
+    ;(view as EditorViewWithDragging).dragging = { slice, move: true }
+  }
+
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', tableNode.textContent)
+    // Ghost image: clone the table element
+    const ghost = tableEl.value.cloneNode(true) as HTMLElement
+    ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0.6;' +
+      'pointer-events:none;max-width:420px;max-height:200px;overflow:hidden;' +
+      'background:var(--bg-editor);padding:4px;border-radius:8px;font-size:14px;'
+    document.body.appendChild(ghost)
+    e.dataTransfer.setDragImage(ghost, 0, 16)
+    setTimeout(() => ghost.remove(), 0)
+  }
+}
+
+const onCornerDragEnd = () => {
+  isCornerDragging.value = false
+  if (props.editor && (props.editor.view as EditorViewWithDragging).dragging) {
+    ;(props.editor.view as EditorViewWithDragging).dragging = null
+  }
 }
 
 // ── Mouse tracking ────────────────────────────────────────────────────────
@@ -932,6 +1011,8 @@ const onTouchEnd = () => {
 
 const onScroll = () => { if (tableEl.value) refreshInfo() }
 
+const onResize = () => { vw.value = window.innerWidth; vh.value = window.innerHeight; refreshInfo() }
+
 onMounted(() => {
   document.addEventListener('mousemove',  onMouseMove,   { passive: true })
   document.addEventListener('click',      onDocumentClick)
@@ -939,7 +1020,7 @@ onMounted(() => {
   document.addEventListener('touchmove',  onTouchMove,   { passive: true })
   document.addEventListener('touchend',   onTouchEnd,    { passive: true })
   window.addEventListener('scroll',       onScroll,      { passive: true, capture: true })
-  window.addEventListener('resize',       refreshInfo)
+  window.addEventListener('resize',       onResize)
 })
 onUnmounted(() => {
   document.removeEventListener('mousemove',  onMouseMove)
@@ -947,8 +1028,9 @@ onUnmounted(() => {
   document.removeEventListener('touchstart', onTouchStart)
   document.removeEventListener('touchmove',  onTouchMove)
   document.removeEventListener('touchend',   onTouchEnd)
-  window.removeEventListener('scroll',       onScroll,  { capture: true })
-  window.removeEventListener('resize',       refreshInfo)
+  // @ts-expect-error — passive is ignored by browsers on removeEventListener but valid at runtime; absent from TS EventListenerOptions type
+  window.removeEventListener('scroll',       onScroll,  { passive: true, capture: true })
+  window.removeEventListener('resize',       onResize)
   if (hideTimer)      clearTimeout(hideTimer)
   if (longPressTimer) clearTimeout(longPressTimer)
 })

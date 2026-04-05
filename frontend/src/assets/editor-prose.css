@@ -82,7 +82,7 @@
   overflow-x: auto;
 }
 .dark .ProseMirror pre {
-  background: #0A0A0D;
+  background: var(--color-code-bg-dark);
   border-color: var(--border);
 }
 .ProseMirror code {
@@ -199,6 +199,11 @@
   .ProseMirror.resize-cursor { cursor: default; }
 }
 
+/* Drop cursor — style to match accent color instead of the default black */
+.ProseMirror-dropcursor {
+  border-color: var(--accent) !important;
+}
+
 /* Placeholder */
 .ProseMirror p.is-editor-empty:first-child::before {
   color: var(--text-muted);
@@ -215,5 +220,12 @@
 .hljs-keyword, .hljs-selector-tag { color: #d73a49; font-weight: 600; }
 
 /* Syntax highlighting — dark mode */
-html.dark .hljs { color: #e6edf3; background: #0d1117; }
+html.dark .hljs { color: #e6edf3; background: var(--color-code-bg-dark); }
 html.dark .hljs-keyword { color: #ff7b72; }
+
+/* Focus-visible for SlashMenu block/slash menu items without a named class */
+.slash-menu .menu-item:focus-visible,
+.block-menu .menu-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
