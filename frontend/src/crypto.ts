@@ -6,9 +6,10 @@
  *    derivation it is extractable:true (needed to export JWK for session wrapping);
  *    on session restore it is imported as extractable:false (non-exportable steady state).
  *    It is never written to localStorage or exposed through any public API.
- * 2. sessionStorage holds only an encrypted copy of the key (wrapped by sessionWrapKey).
- *    sessionWrapKey is derived from window.name and never persisted, so the wrapped key
- *    becomes permanently undecryptable the moment the browser tab is closed.
+ * 2. localStorage holds an encrypted copy of the key (wrapped by a device-persistent key)
+ *    with a 24-hour expiry that matches the server-side Bearer token TTL. This survives
+ *    iOS Chrome app restarts without requiring the user to re-enter their password.
+ *    The session is invalidated by explicit lock, 24h expiry, or library reset.
  * 3. All ciphertext is prefixed with 'ENC1:' to allow zero-cost encrypted-state detection
  *    without attempting decryption.
  * 4. PBKDF2 uses a per-user random salt stored in localStorage. New users get a fresh
@@ -23,6 +24,24 @@ const HW_CRED_KEY = 'yinmo_hw_cred_id'
 const HW_PRF_KEY = 'yinmo_hw_prf'
 const KEYLESS_KEY = 'yinmo_keyless'
 const SERVER_ENCRYPT_KEY = 'yinmo_server_encrypt'
+const DEVICE_WRAP_KEY = 'yinmo_device_key'
+// 24 h — matches the server-side Bearer token TTL so both expire together.
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Returns (or creates on first call) a 128-bit random device key stored in
+ * localStorage. This key is used to wrap the session master key so it is not
+ * stored in plaintext. It persists across app restarts and tab closes — unlike
+ * window.name — so the wrapped session key can be restored after iOS evicts Chrome.
+ */
+function getOrCreateDeviceKey(): string {
+  let key = localStorage.getItem(DEVICE_WRAP_KEY)
+  if (key) return key
+  const arr = window.crypto.getRandomValues(new Uint8Array(16))
+  key = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('')
+  localStorage.setItem(DEVICE_WRAP_KEY, key)
+  return key
+}
 
 /**
  * Returns the PBKDF2 salt for this user's library.
@@ -188,20 +207,20 @@ export function clearHardwareKey(): void {
  * @returns {Promise<boolean>} True if the key was successfully restored.
  */
 export async function restoreKeyFromSession(): Promise<boolean> {
-  const saved = sessionStorage.getItem('yinmo_session_key')
+  const saved = localStorage.getItem('yinmo_session_key')
   if (!saved) return false
   try {
     const data = JSON.parse(atob(saved))
+    // Reject entries that have passed their 24-hour TTL.
+    if (data.expires && Date.now() > data.expires) {
+      localStorage.removeItem('yinmo_session_key')
+      return false
+    }
     const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0))
     const ciphertext = Uint8Array.from(atob(data.data), c => c.charCodeAt(0))
-
-    // sessionWrapKey is derived from window.name, which is tab-scoped and not
-    // persisted by the browser. If this tab was closed and reopened, window.name
-    // will be empty/'default-session', causing decryption to fail intentionally.
     const wrapKey = await deriveSessionWrapKey()
     const decrypted = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wrapKey, ciphertext)
     const jwk = JSON.parse(new TextDecoder().decode(decrypted))
-
     // Import as non-extractable so that XSS or console access cannot retrieve
     // the raw key bytes even after successful session restore.
     _key = await window.crypto.subtle.importKey(
@@ -209,18 +228,18 @@ export async function restoreKeyFromSession(): Promise<boolean> {
     )
     return true
   } catch (_e) {
-    sessionStorage.removeItem('yinmo_session_key')
+    localStorage.removeItem('yinmo_session_key')
     return false
   }
 }
 
 /**
- * Wraps the master key with sessionWrapKey and stores the result in sessionStorage.
+ * Wraps the master key with the device wrap key and stores the result in localStorage
+ * with a 24-hour expiry timestamp. This survives iOS Chrome evicting the app from memory,
+ * so the user does not need to re-enter their password after backgrounding and returning.
  *
  * The JWK export is a necessary intermediate step for wrapping; the plaintext JWK
  * exists only in local function scope and is not retained after encryption completes.
- * The wrapped key in sessionStorage is useless without sessionWrapKey, which is never
- * persisted and can only be reconstructed while the same browser tab remains open.
  */
 async function saveKeyToSession(key: CryptoKey) {
   try {
@@ -232,37 +251,33 @@ async function saveKeyToSession(key: CryptoKey) {
 
     const store = {
       iv: btoa(String.fromCharCode(...iv)),
-      data: btoa(bufToString(ciphertext))
+      data: btoa(bufToString(ciphertext)),
+      expires: Date.now() + SESSION_TTL_MS
     }
-    sessionStorage.setItem('yinmo_session_key', btoa(JSON.stringify(store)))
+    localStorage.setItem('yinmo_session_key', btoa(JSON.stringify(store)))
   } catch (e) {
     console.error('Failed to save key to session', e)
   }
 }
 
 /**
- * Derives a transient wrapping key bound to the current browser tab.
+ * Derives a device-persistent wrapping key from the device key stored in localStorage.
  *
- * window.name persists across navigations within the same tab but is cleared when
- * the tab is closed. By deriving the wrap key from window.name, we get a key that
- * is effectively tab-scoped: navigating away and back still works, but closing and
- * reopening the tab destroys the ability to unwrap the session key. This provides
- * automatic session expiry without an explicit timeout mechanism.
+ * Unlike window.name (which is cleared when the tab is closed), the device key survives
+ * app restarts on iOS, allowing the wrapped session key to be restored after Chrome is
+ * evicted from memory and relaunched. The device key is a random 128-bit hex string
+ * created once per device; it never leaves localStorage.
  *
- * The 10,000-iteration count is intentionally low — this key protects against an
- * offline attacker who steals sessionStorage but not window.name (which is not
- * accessible outside the tab). The primary entropy comes from window.name being
- * set to a random value by the app at session start.
- *
- * Security note: Under an XSS attack, both window.name and sessionStorage
- * are readable, making this PBKDF2 iteration count irrelevant. The real last-defence
- * is the non-extractable _key CryptoKey — even under XSS the raw key bytes cannot be
- * exfiltrated via the WebCrypto API.
+ * The 10,000-iteration count is intentionally low — the real entropy comes from the
+ * 128-bit random device key, not the PBKDF2 iteration count. An offline attacker who
+ * steals localStorage gets both the device key and the wrapped session key, making
+ * iterations irrelevant against that threat. The primary protection is that the
+ * non-extractable _key CryptoKey cannot be exfiltrated even under XSS.
  */
 async function deriveSessionWrapKey(): Promise<CryptoKey> {
   const salt = new TextEncoder().encode('yinmo-session-wrap-v1')
   const baseKey = await window.crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(window.name || 'default-session'), 'PBKDF2', false, ['deriveKey']
+    'raw', new TextEncoder().encode(getOrCreateDeviceKey()), 'PBKDF2', false, ['deriveKey']
   )
   return await window.crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: 10000, hash: 'SHA-256' },
@@ -478,8 +493,8 @@ export async function verifyAndUnlockLibrary(key: CryptoKey): Promise<boolean> {
 export function lockLibrary(): void {
   if (_keyless) return   // Keyless libraries cannot be locked.
   _key = null
-  sessionStorage.removeItem('yinmo_session_key')
-  sessionStorage.removeItem('yinmo_session_token')
+  localStorage.removeItem('yinmo_session_key')
+  localStorage.removeItem('yinmo_session_token')
 }
 
 /** Returns true when no master key is loaded and keyless mode is not active. */
@@ -547,8 +562,9 @@ export async function resetLibrary(): Promise<void> {
   localStorage.removeItem(HW_PRF_KEY)
   localStorage.removeItem(KEYLESS_KEY)
   localStorage.removeItem(SERVER_ENCRYPT_KEY)
-  sessionStorage.removeItem('yinmo_session_key')
-  sessionStorage.removeItem('yinmo_session_token')
+  localStorage.removeItem(DEVICE_WRAP_KEY)
+  localStorage.removeItem('yinmo_session_key')
+  localStorage.removeItem('yinmo_session_token')
   localStorage.removeItem('yinmo_note_titles_v2')
   localStorage.removeItem('yinmo_structure_backup_v2')
   _key = null
@@ -848,14 +864,34 @@ export async function hashToken(token: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** Stores the session token in sessionStorage for the current tab. */
+/**
+ * Stores the Bearer token in localStorage with a 24-hour expiry.
+ * localStorage persists across iOS Chrome restarts, preventing the user from
+ * having to re-authenticate after the app is evicted from memory.
+ */
 export function storeSessionToken(token: string): void {
-  sessionStorage.setItem('yinmo_session_token', token)
+  const entry = { token, expires: Date.now() + SESSION_TTL_MS }
+  localStorage.setItem('yinmo_session_token', JSON.stringify(entry))
 }
 
-/** Returns the current session token, or null if not set / locked. */
+/**
+ * Returns the current Bearer token, or null if not set, expired, or locked.
+ * Expired entries are removed immediately.
+ */
 export function getSessionToken(): string | null {
-  return sessionStorage.getItem('yinmo_session_token')
+  const raw = localStorage.getItem('yinmo_session_token')
+  if (!raw) return null
+  try {
+    const entry = JSON.parse(raw)
+    if (entry.expires && Date.now() > entry.expires) {
+      localStorage.removeItem('yinmo_session_token')
+      return null
+    }
+    return entry.token ?? null
+  } catch {
+    localStorage.removeItem('yinmo_session_token')
+    return null
+  }
 }
 
 /** Returns the stored hardware credential ID (base64 rawId), or null if not registered. */
