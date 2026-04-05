@@ -1650,6 +1650,11 @@ const sidebarClass = computed(() => 'flex flex-col z-50 relative')
 const sidebarStyle = computed(() => ({
   width: isDesktop.value ? (sidebarVisible.value ? sidebarWidth.value + 'px' : '44px') : '100%',
   position: (isDesktop.value ? 'relative' : 'fixed') as any,
+  // Mobile: fixed overlay must be pinned to viewport top-left and fill full height so
+  // the inner flex-1 nav gets a constrained height and overflow-y-auto can scroll.
+  // Use 100dvh (dynamic viewport height) so the sidebar doesn't extend under the
+  // iOS browser chrome (address bar).
+  ...(isDesktop.value ? {} : { top: 0, left: 0, height: '100dvh' }),
   background: 'var(--bg-sidebar)',
   borderRight: '1px solid var(--border)',
   transform: !isDesktop.value && !showMobileSidebar.value ? 'translateX(-100%)' : 'none',
