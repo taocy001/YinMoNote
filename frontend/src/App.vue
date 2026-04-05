@@ -218,19 +218,22 @@ v-model="tagEditValue" :placeholder="t.tagPlaceholder" class="w-full px-2 py-1.5
         <button class="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all active:scale-[0.97]" style="color: var(--text-secondary);" @click="showMobileSidebar = true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         </button>
-        <!-- Note title — fills remaining space -->
-        <span class="font-semibold text-sm truncate flex-1 min-w-0" style="color: var(--text-primary);">{{ currentNote ? (noteTitles[currentNote] || currentNote) : t.logo }}</span>
-        <!-- Right action group -->
-        <div class="flex items-center gap-0.5 shrink-0">
-          <!-- Save-status pill: amber when dirty (tappable to save), pulsing dot when saving -->
+        <!-- Note title + unsaved indicator — fills remaining space -->
+        <div class="flex items-center gap-1.5 flex-1 min-w-0">
+          <span class="font-semibold text-sm truncate min-w-0" style="color: var(--text-primary);">{{ currentNote ? (noteTitles[currentNote] || currentNote) : t.logo }}</span>
+          <!-- Save-status pill: sits immediately after the title, tappable to save -->
           <button
-v-if="editorRef?.saveStatus === 'dirty'" class="flex items-center gap-1 px-2 py-1 rounded-md transition-all active:scale-[0.97]"
+            v-if="editorRef?.saveStatus === 'dirty'"
+            class="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-md transition-all active:scale-[0.97]"
             style="background: rgba(217,119,6,0.08);"
             @click="editorRef?.doSave()">
             <div class="w-1.5 h-1.5 rounded-full" style="background: var(--color-warning);"></div>
             <span class="ts-xs font-medium" style="color: var(--color-warning);">{{ t.unsaved }}</span>
           </button>
-          <div v-else-if="editorRef?.saveStatus === 'saving'" class="w-2 h-2 rounded-full animate-pulse mx-2" style="background: var(--accent);"></div>
+          <div v-else-if="editorRef?.saveStatus === 'saving'" class="shrink-0 w-2 h-2 rounded-full animate-pulse" style="background: var(--accent);"></div>
+        </div>
+        <!-- Right action group -->
+        <div class="flex items-center gap-0.5 shrink-0">
           <!-- More button — history / export (only when a note is open and unlocked) -->
           <button
 v-if="currentNote && !isLibraryLocked" class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
