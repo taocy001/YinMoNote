@@ -100,11 +100,11 @@ v-for="tag in allTags" :key="tag" :style="activeTagFilter === tag ? 'background:
         </div>
 
         <!-- Note list -->
-        <nav class="flex-1 overflow-y-auto px-2 pb-20" style="scrollbar-width: thin; scrollbar-color: var(--border) transparent;" @dragover.prevent="onSidebarDragOver" @drop="onSidebarDrop" @scroll="handleSidebarScroll">
+        <nav class="flex-1 overflow-y-auto px-2 pb-20" style="scrollbar-width: thin; scrollbar-color: var(--border) transparent; touch-action: pan-y; -webkit-overflow-scrolling: touch;" @dragover.prevent="onSidebarDragOver" @drop="onSidebarDrop" @scroll="handleSidebarScroll">
           <div
 v-for="item in displayList" :key="item.key"
             data-testid="note-item" :data-note-key="item.key"
-            :draggable="true" :style="{ paddingLeft: (item.level * 14 + 8) + 'px', opacity: draggedKey === item.key ? '0.2' : '1' }" class="group relative flex items-center gap-2 h-[36px] my-[1px] rounded-lg cursor-pointer transition-all duration-150 select-none ts-sm pr-2" :class="currentNote === item.key ? 'note-item-active' : 'note-item-default'" @dragstart="onNoteDragStart($event, item.key)"
+            :draggable="isDesktop" :style="{ paddingLeft: (item.level * 14 + 8) + 'px', opacity: draggedKey === item.key ? '0.2' : '1' }" class="group relative flex items-center gap-2 h-[36px] my-[1px] rounded-lg cursor-pointer transition-all duration-150 select-none ts-sm pr-2" :class="currentNote === item.key ? 'note-item-active' : 'note-item-default'" @dragstart="onNoteDragStart($event, item.key)"
             @dragover.prevent.stop="onNoteDragOver($event, item.key)"
             @drop.prevent.stop="onNoteDrop($event, item.key)"
             @dragend="onNoteDragEnd"
