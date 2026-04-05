@@ -100,7 +100,7 @@ v-for="tag in allTags" :key="tag" :style="activeTagFilter === tag ? 'background:
         </div>
 
         <!-- Note list -->
-        <nav class="flex-1 overflow-y-auto px-2 pb-20" style="scrollbar-width: thin; scrollbar-color: var(--border) transparent; touch-action: pan-y; -webkit-overflow-scrolling: touch;" @dragover.prevent="onSidebarDragOver" @drop="onSidebarDrop" @scroll="handleSidebarScroll">
+        <nav class="flex-1 min-h-0 overflow-y-scroll px-2 pb-20" style="scrollbar-width: thin; scrollbar-color: var(--border) transparent; touch-action: pan-y; -webkit-overflow-scrolling: touch;" @dragover.prevent="onSidebarDragOver" @drop="onSidebarDrop" @scroll="handleSidebarScroll">
           <div
 v-for="item in displayList" :key="item.key"
             data-testid="note-item" :data-note-key="item.key"
@@ -1650,11 +1650,11 @@ const sidebarClass = computed(() => 'flex flex-col z-50 relative')
 const sidebarStyle = computed(() => ({
   width: isDesktop.value ? (sidebarVisible.value ? sidebarWidth.value + 'px' : '44px') : '100%',
   position: (isDesktop.value ? 'relative' : 'fixed') as any,
-  // Mobile: fixed overlay must be pinned to viewport top-left and fill full height so
-  // the inner flex-1 nav gets a constrained height and overflow-y-auto can scroll.
-  // Use 100dvh (dynamic viewport height) so the sidebar doesn't extend under the
-  // iOS browser chrome (address bar).
-  ...(isDesktop.value ? {} : { top: 0, left: 0, height: '100dvh' }),
+  // Mobile: pin the fixed overlay to all four viewport edges with top/bottom instead of
+  // height so the sidebar spans the full viewport on every iOS/Chrome version without
+  // relying on dvh unit support.  The inner flex-1+min-h-0 nav then gets a bounded
+  // height and overflow-y-scroll can create a real scroll container.
+  ...(isDesktop.value ? {} : { top: '0', left: '0', bottom: '0' }),
   background: 'var(--bg-sidebar)',
   borderRight: '1px solid var(--border)',
   transform: !isDesktop.value && !showMobileSidebar.value ? 'translateX(-100%)' : 'none',
