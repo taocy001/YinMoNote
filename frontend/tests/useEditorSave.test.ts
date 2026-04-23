@@ -87,6 +87,7 @@ function makeDeps(overrides: Partial<Parameters<typeof useEditorSave>[0]> = {}) 
     indexNote,
     scheduleOrphanCleanup,
     t,
+    isReadOnly: ref(false),
     ...overrides,
   }
 }
@@ -466,5 +467,54 @@ describe('saveIfDirty', () => {
     saveStatus.value = 'saved'
     await saveIfDirty()
     expect(vi.mocked(axios.put)).not.toHaveBeenCalled()
+  })
+})
+
+// ── isReadOnly guard ──────────────────────────────────────────────────────────
+
+describe('onContentChanged – isReadOnly guard', () => {
+  it('does not set saveStatus to dirty when isReadOnly is true', () => {
+    const deps = makeDeps({ isReadOnly: ref(true) })
+    const { onContentChanged, saveStatus } = useEditorSave(deps)
+    onContentChanged()
+    expect(saveStatus.value).toBe('idle')
+  })
+
+  it('does not schedule debounce timer when isReadOnly is true', async () => {
+    const deps = makeDeps({ isReadOnly: ref(true) })
+    const { onContentChanged } = useEditorSave(deps)
+    onContentChanged()
+    vi.advanceTimersByTime(config.autoSaveDebounceMs + 100)
+    await Promise.resolve()
+    expect(vi.mocked(axios.put)).not.toHaveBeenCalled()
+  })
+
+  it('does not schedule interval timer when isReadOnly is true', async () => {
+    const deps = makeDeps({ isReadOnly: ref(true) })
+    const { onContentChanged } = useEditorSave(deps)
+    onContentChanged()
+    vi.advanceTimersByTime(config.autoSaveIntervalMs + 100)
+    await Promise.resolve()
+    expect(vi.mocked(axios.put)).not.toHaveBeenCalled()
+  })
+
+  it('returns early and leaves saveStatus idle for all calls while read-only', () => {
+    const deps = makeDeps({ isReadOnly: ref(true) })
+    const { onContentChanged, saveStatus } = useEditorSave(deps)
+    onContentChanged()
+    onContentChanged()
+    onContentChanged()
+    expect(saveStatus.value).toBe('idle')
+  })
+
+  it('resumes normal dirty-tracking when isReadOnly becomes false', () => {
+    const isReadOnly = ref(true)
+    const deps = makeDeps({ isReadOnly })
+    const { onContentChanged, saveStatus } = useEditorSave(deps)
+    onContentChanged() // while read-only: no effect
+    expect(saveStatus.value).toBe('idle')
+    isReadOnly.value = false
+    onContentChanged() // now editable
+    expect(saveStatus.value).toBe('dirty')
   })
 })

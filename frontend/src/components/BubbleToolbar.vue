@@ -216,8 +216,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
-import type { Component } from 'vue'
+import { ref, computed, nextTick, inject } from 'vue'
+import type { Component, Ref } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { Link, ChevronDown, Ban, Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript, Pilcrow, Heading1, Heading2, Heading3, Heading4 } from 'lucide-vue-next'
 
@@ -227,6 +227,8 @@ const props = defineProps<{
   editor: TiptapEditor | undefined
   t: Record<string, any>
 }>()
+
+const isReadOnly = inject<Ref<boolean>>('isReadOnly', ref(false))
 
 // ── Tooltip ───────────────────────────────────────────────────────────────
 // centerX is the horizontal center of the hovered button; used with translateX(-50%) in the template.
@@ -360,6 +362,11 @@ const applyBgColor = (color: string | null) => {
 
 // ── Position & visibility (called from Editor.vue on every update) ────────
 const updateBubble = (ed: TiptapEditor) => {
+  if (isReadOnly.value) {
+    bubbleVisible.value = false
+    closeAllDropdowns()
+    return
+  }
   const { selection } = ed.state
   if (selection.empty) {
     bubbleVisible.value = false

@@ -3,7 +3,8 @@
        Provides formatting shortcuts in a persistent scrollable bar above
        the virtual keyboard. @mousedown.prevent keeps the editor focused. -->
   <div
-class="md:hidden shrink-0 flex items-center overflow-x-auto"
+    v-show="!isReadOnly"
+    class="md:hidden shrink-0 flex items-center overflow-x-auto"
     style="background:var(--bg-sidebar);border-top:1px solid var(--border);min-height:44px;scrollbar-width:none;-webkit-overflow-scrolling:touch">
     <div class="flex items-center px-1 gap-0.5 py-1">
       <!-- Bold -->
@@ -102,6 +103,7 @@ class="mobile-fmt-btn text-base"
 </template>
 
 <script setup lang="ts">
+import { inject, ref, type Ref } from 'vue'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 
 defineProps<{
@@ -110,4 +112,6 @@ defineProps<{
   /** i18n translation object */
   t: Record<string, any>
 }>()
+
+const isReadOnly = inject<Ref<boolean>>('isReadOnly', ref(false))
 </script>

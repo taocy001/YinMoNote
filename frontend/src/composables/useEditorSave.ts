@@ -37,6 +37,8 @@ export interface EditorSaveDeps {
   scheduleOrphanCleanup: () => void
   /** i18n labels for status display. */
   t: Ref<Record<string, string>>
+  /** When true, auto-save is skipped — the editor is in read-only mode. */
+  isReadOnly: Ref<boolean>
 }
 
 /**
@@ -48,7 +50,7 @@ export interface EditorSaveDeps {
 export function useEditorSave(deps: EditorSaveDeps) {
   const {
     editor, noteFileName, isContentEmpty,
-    serverEncrypt, indexNote, scheduleOrphanCleanup, t,
+    serverEncrypt, indexNote, scheduleOrphanCleanup, t, isReadOnly,
   } = deps
 
   // ── Reactive state ──────────────────────────────────────────────────────
@@ -153,6 +155,7 @@ export function useEditorSave(deps: EditorSaveDeps) {
    * Sets saveStatus to dirty and manages debounce + interval auto-save timers.
    */
   const onContentChanged = () => {
+    if (isReadOnly.value) return
     saveStatus.value = 'dirty'
     // Debounce: save after a pause in editing; cancels interval to avoid double-save.
     if (autoSaveTimer) clearTimeout(autoSaveTimer)

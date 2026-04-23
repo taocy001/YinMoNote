@@ -234,6 +234,20 @@ v-model="tagEditValue" :placeholder="t.tagPlaceholder" class="w-full px-2 py-1.5
         </div>
         <!-- Right action group -->
         <div class="flex items-center gap-0.5 shrink-0">
+          <!-- Read-only / edit toggle (only when a note is open and unlocked) -->
+          <button
+            v-if="currentNote && !isLibraryLocked"
+            class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
+            style="color: var(--text-secondary);"
+            :aria-label="isReadOnly ? t.switchToEdit : t.switchToReadOnly"
+            :aria-pressed="!isReadOnly"
+            :title="isReadOnly ? t.switchToEdit : t.switchToReadOnly"
+            @click="toggleReadOnly">
+            <!-- Pencil icon: shown when read-only (click to edit) -->
+            <svg v-if="isReadOnly" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <!-- Eye icon: shown when editing (click to go read-only) -->
+            <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="7" r="1.5" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
           <!-- More button — history / export (only when a note is open and unlocked) -->
           <button
 v-if="currentNote && !isLibraryLocked" class="w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-[0.97]"
@@ -605,6 +619,7 @@ import TabBar from './components/TabBar.vue'
 import { useBatchImport, filesFromDrop } from './composables/useBatchImport'
 import { config } from './config'
 import { clearCache as clearIndexCache } from './indexCache'
+import { useReadOnlyMode } from './composables/useReadOnlyMode'
 
 // Initialise window.name with a cryptographically random 32-char hex value on the
 // first visit to this tab. The session wrap key (used to protect the copy of the
@@ -1495,7 +1510,13 @@ const fontSize = ref(Number(localStorage.getItem('yinmo_font_size') || '16'))
 const typewriterMode = ref(localStorage.getItem('yinmo_typewriter_mode') === '1')
 const allowExternalImages = ref(false)
 
+const { isReadOnly, toggleReadOnly, resetToDeviceDefault } = useReadOnlyMode()
+
 provide<Ref<boolean>>('serverEncrypt', serverEncrypt); provide<Ref<string>>('editorWidth', editorWidth); provide<Ref<number>>('fontSize', fontSize); provide<Ref<boolean>>('typewriterMode', typewriterMode); provide<Ref<boolean>>('isDark', isDark); provide<Ref<boolean>>('isLibraryLocked', isLibraryLocked); provide<(id: string, plainText: string) => void>('indexNote', indexNote); provide<() => void>('scheduleOrphanCleanup', scheduleOrphanCleanup); provide<Ref<boolean>>('allowExternalImages', allowExternalImages)
+provide<Ref<boolean>>('isReadOnly', isReadOnly); provide<() => void>('toggleReadOnly', toggleReadOnly)
+
+// Reset read-only mode to device default whenever the user switches notes.
+watch(currentNote, resetToDeviceDefault)
 
 // Reset import mode if server turns out to have no notes (fresh library).
 watch(hasServerNotes, (v) => { if (!v && unlockMode.value === 'import') unlockMode.value = 'device' })

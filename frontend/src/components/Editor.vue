@@ -25,6 +25,7 @@ data-testid="toc-btn" class="w-7 h-7 flex items-center justify-center rounded-lg
         </span>
         <!-- Save status pill — clickable when dirty to trigger manual save -->
         <div
+          v-show="!isReadOnly"
           data-testid="save-status"
           class="flex items-center gap-1.5 ts-xs font-medium transition-all rounded-md"
           :class="(saveStatus === 'dirty' || saveStatus === 'error') ? 'cursor-pointer px-1.5 py-0.5 active:scale-[0.97]' : ''"
@@ -35,6 +36,20 @@ data-testid="toc-btn" class="w-7 h-7 flex items-center justify-center rounded-lg
           <div class="w-1.5 h-1.5 rounded-full" :class="saveStatus === 'saving' ? 'animate-pulse' : ''" :style="saveDotStyle"></div>
           <span>{{ statusText }}</span>
         </div>
+        <!-- Read-only / edit toggle -->
+        <button
+          class="editor-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg transition-all active:scale-[0.97] opacity-60 hover:opacity-100"
+          style="color: var(--text-muted);"
+          :aria-label="isReadOnly ? t.switchToEdit : t.switchToReadOnly"
+          :aria-pressed="!isReadOnly"
+          :title="isReadOnly ? t.switchToEdit : t.switchToReadOnly"
+          @click="toggleReadOnly"
+        >
+          <!-- Pencil icon: shown when read-only (click to edit) -->
+          <svg v-if="isReadOnly" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <!-- Eye icon: shown when editing (click to go read-only) -->
+          <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="7" r="1.5" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
       </div>
       <div class="flex items-center gap-0.5">
         <!-- Export dropdown -->
@@ -297,6 +312,8 @@ const indexNote = inject<(id: string, plainText: string) => void>('indexNote', (
 const scheduleOrphanCleanup = inject<() => void>('scheduleOrphanCleanup', () => {})
 const editorWidth = inject<Ref<string>>('editorWidth', ref('standard'))
 const fontSize = inject<Ref<number>>('fontSize', ref(16))
+const isReadOnly = inject<Ref<boolean>>('isReadOnly', ref(false))
+const toggleReadOnly = inject<() => void>('toggleReadOnly', () => {})
 const typewriterMode = inject<Ref<boolean>>('typewriterMode', ref(false))
 
 // Ref to the editor-content component (scroll container is its $el)
@@ -807,7 +824,13 @@ const {
   indexNote,
   scheduleOrphanCleanup,
   t: t as unknown as Ref<Record<string, string>>,
+  isReadOnly,
 })
+
+// Sync editable state with isReadOnly on every change and on initial mount.
+watch(isReadOnly, (v) => {
+  editor.value?.setEditable(!v)
+}, { immediate: true })
 
 // Start as true so that the initial onUpdate fired during Tiptap's DOM mount
 // (before onMounted calls loadNote) does not emit title-changed with empty content.
@@ -887,7 +910,11 @@ const onKey = (e: KeyboardEvent) => {
   // Toggle focus mode with F key (no modifier, not typing in editor prose)
   if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && (e.target as HTMLElement).classList.contains('ProseMirror') === false && tag !== 'INPUT' && tag !== 'TEXTAREA') { toggleFocusMode(); return }
 }
-onMounted(() => { window.addEventListener('keydown', onKey, true); document.addEventListener('click', onDocClick); loadNote() })
+onMounted(() => {
+  window.addEventListener('keydown', onKey, true)
+  document.addEventListener('click', onDocClick)
+  loadNote()
+})
 onBeforeUnmount(async () => {
   window.removeEventListener('keydown', onKey, true)
   document.removeEventListener('click', onDocClick)

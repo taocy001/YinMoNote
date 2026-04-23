@@ -277,6 +277,91 @@ describe('mobile toolbar strings', () => {
   })
 })
 
+// ─── read-only mode strings ───────────────────────────────────────────────────
+
+describe('read-only mode strings', () => {
+  const readOnlyKeys = ['readOnlyMode', 'editMode', 'switchToEdit', 'switchToReadOnly'] as const
+
+  it('zh: all read-only mode strings present and non-empty', () => {
+    setLang('zh')
+    const { t } = useI18n()
+    for (const key of readOnlyKeys) {
+      expect(t.value[key], `zh missing: ${key}`).toBeTruthy()
+    }
+  })
+
+  it('en: all read-only mode strings present and non-empty', () => {
+    setLang('en')
+    const { t } = useI18n()
+    for (const key of readOnlyKeys) {
+      expect(t.value[key], `en missing: ${key}`).toBeTruthy()
+    }
+  })
+
+  it('zh: readOnlyMode is "只读"', () => {
+    setLang('zh')
+    const { t } = useI18n()
+    expect(t.value.readOnlyMode).toBe('只读')
+  })
+
+  it('zh: editMode is "编辑"', () => {
+    setLang('zh')
+    const { t } = useI18n()
+    expect(t.value.editMode).toBe('编辑')
+  })
+
+  it('en: readOnlyMode is "Read-only"', () => {
+    setLang('en')
+    const { t } = useI18n()
+    expect(t.value.readOnlyMode).toBe('Read-only')
+  })
+
+  it('en: editMode is "Edit"', () => {
+    setLang('en')
+    const { t } = useI18n()
+    expect(t.value.editMode).toBe('Edit')
+  })
+
+  it('en: switchToEdit is "Switch to edit mode"', () => {
+    setLang('en')
+    const { t } = useI18n()
+    expect(t.value.switchToEdit).toBe('Switch to edit mode')
+  })
+
+  it('en: switchToReadOnly is "Switch to read-only mode"', () => {
+    setLang('en')
+    const { t } = useI18n()
+    expect(t.value.switchToReadOnly).toBe('Switch to read-only mode')
+  })
+
+  it('readOnlyMode and editMode are distinct in both languages', () => {
+    for (const lang of ['zh', 'en'] as const) {
+      setLang(lang)
+      const { t } = useI18n()
+      expect(t.value.readOnlyMode).not.toBe(t.value.editMode)
+    }
+  })
+
+  it('switchToEdit and switchToReadOnly are distinct in both languages', () => {
+    for (const lang of ['zh', 'en'] as const) {
+      setLang(lang)
+      const { t } = useI18n()
+      expect(t.value.switchToEdit).not.toBe(t.value.switchToReadOnly)
+    }
+  })
+
+  it('zh and en values differ for all read-only keys', () => {
+    setLang('zh')
+    const { t } = useI18n()
+    const zhVals = readOnlyKeys.map(k => t.value[k])
+    setLang('en')
+    const enVals = readOnlyKeys.map(k => t.value[k])
+    for (let i = 0; i < readOnlyKeys.length; i++) {
+      expect(zhVals[i], `"${readOnlyKeys[i]}" should differ between zh and en`).not.toBe(enVals[i])
+    }
+  })
+})
+
 // ─── completeness ─────────────────────────────────────────────────────────────
 
 describe('completeness', () => {

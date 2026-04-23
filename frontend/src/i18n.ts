@@ -431,6 +431,11 @@ const zh = {
   codeSource: '源码',
   codeCopied: '✓ 已复制',
   codeCopy: '复制',
+  // Read-only / edit mode toggle
+  readOnlyMode: '只读',
+  editMode: '编辑',
+  switchToEdit: '切换到编辑模式',
+  switchToReadOnly: '切换到只读模式',
 }
 
 const en = {
@@ -838,6 +843,11 @@ const en = {
   codeSource: 'Source',
   codeCopied: '✓ Copied',
   codeCopy: 'Copy',
+  // Read-only / edit mode toggle
+  readOnlyMode: 'Read-only',
+  editMode: 'Edit',
+  switchToEdit: 'Switch to edit mode',
+  switchToReadOnly: 'Switch to read-only mode',
 }
 
 /**
